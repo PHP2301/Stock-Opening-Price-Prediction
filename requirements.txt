@@ -1,0 +1,7 @@
+pandas
+numpy
+matplotlib
+scikit-learn
+seaborn
+statsmodels
+# tensorflow (nếu bạn dùng mô hình LSTM)
