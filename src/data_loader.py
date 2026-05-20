@@ -48,6 +48,10 @@ def fetch_and_prepare_data(ticker: str, start_date: str = "2015-01-01", end_date
     macd_df = ta.macd(df['close'], fast=12, slow=26, signal=9)
     df = pd.concat([df, macd_df], axis=1)
     
+    # Xóa 2 cột MACDh và MACDs không sử dụng để tránh lỗi đỏ (Spell checker) ở file CSV
+    macd_cols_to_drop = [col for col in macd_df.columns if 'MACDh' in col or 'MACDs' in col]
+    df = df.drop(columns=macd_cols_to_drop)
+    
     # Tính độ biến động lịch sử (Volatility) dựa trên độ lệch chuẩn lợi nhuận 20 phiên
     df['volatility_20'] = df['close'].pct_change().rolling(window=20).std()
     
