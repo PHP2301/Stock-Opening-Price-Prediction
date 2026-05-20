@@ -49,25 +49,43 @@ class DataTransformer:
 
     def split_train_test_by_year(self, df: pd.DataFrame, X_3D: np.ndarray, y_3D: np.ndarray):
         """
-        Workflow Bước 4: Chia tách tập dữ liệu theo mốc thời gian lịch sử chuẩn xác.
+        Chia tập dữ liệu theo mốc thời gian lịch sử (theo năm).
         - Giữ nguyên trình tự thời gian (Không dùng shuffle trộn lẫn dữ liệu tương lai).
         """
-        # Vì ta cắt mất 'time_steps' dòng đầu tiên khi làm cửa sổ trượt, 
-        # nên mảng 3D sẽ khớp dòng bắt đầu từ chỉ số 'time_steps' của DataFrame gốc
         df_align = df.iloc[self.time_steps:].reset_index(drop=True)
         df_align['date'] = pd.to_datetime(df_align['date'])
         
-        # Áp dụng chiến lược chia mốc thời gian thực tế của bạn:
-        # Train: Toàn bộ dữ liệu trước năm 2024 (Ví dụ từ 2015 - hết 2023)
-        # Test/Validate: Dữ liệu từ năm 2024 trở đi (bao gồm cả 2026)
         train_mask = df_align['date'].dt.year <= 2023
         test_mask = df_align['date'].dt.year >= 2024
         
         X_train, y_train = X_3D[train_mask], y_3D[train_mask]
         X_test, y_test = X_3D[test_mask], y_3D[test_mask]
         
-        # Lấy ra mảng giá thô của tập Test để sau này so sánh thực tế trên biểu đồ
         y_test_raw = df_align.loc[test_mask, self.target_col].values
+        
+        return X_train, y_train, X_test, y_test, y_test_raw
+
+    def split_train_test_chronological(self, df: pd.DataFrame, X_3D: np.ndarray, y_3D: np.ndarray, train_ratio: float = 0.8):
+        """
+        Chia tập dữ liệu theo tỷ lệ thời gian (mặc định 80% Train / 20% Test).
+        Phù hợp khi dữ liệu lịch sử bị giới hạn (ví dụ: Yahoo Finance chỉ có từ 2023).
+        Giữ nguyên thứ tự thời gian, KHÔNG shuffle.
+        """
+        total = len(X_3D)
+        split_idx = int(total * train_ratio)
+        
+        X_train = X_3D[:split_idx]
+        y_train = y_3D[:split_idx]
+        X_test  = X_3D[split_idx:]
+        y_test  = y_3D[split_idx:]
+        
+        # Lấy mảng target_return thô của tập Test để tính giá thực tế
+        df_align = df.iloc[self.time_steps:].reset_index(drop=True)
+        y_test_raw = df_align.loc[split_idx:, self.target_col].values
+        
+        print(f"📊 Chia dữ liệu theo tỷ lệ {int(train_ratio*100)}/{int((1-train_ratio)*100)}:")
+        print(f"   🔹 Train: {X_train.shape[0]} mẫu")
+        print(f"   🔸 Test : {X_test.shape[0]} mẫu")
         
         return X_train, y_train, X_test, y_test, y_test_raw
 

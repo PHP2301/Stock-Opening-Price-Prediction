@@ -1,8 +1,21 @@
+import os
+import random
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
+import tensorflow as tf
+import joblib
+
+# ==========================================
+# CỐ ĐỊNH RANDOM SEED — ĐẢM BẢO KẾT QUẢ TÁI LẬP
+# ==========================================
+SEED = 42
+random.seed(SEED)
+np.random.seed(SEED)
+tf.random.set_seed(SEED)
+os.environ['PYTHONHASHSEED'] = str(SEED)
 
 # Import các hàm và class từ các Module bạn đã viết trong thư mục src
 from src.data_loader import fetch_and_prepare_data
@@ -38,14 +51,15 @@ def main():
     X_scaled, y_scaled = transformer.fit_transform_data(df)
     X_3D, y_3D = transformer.create_sliding_windows(X_scaled, y_scaled)
     
-    X_train, y_train, X_test, y_test, y_test_raw = transformer.split_train_test_by_year(df, X_3D, y_3D)
+    # Dùng chiến lược 80/20 theo thứ tự thời gian thay vì chia theo năm
+    # → Train tăng từ 56 lên ~511 mẫu, kết quả ổn định hơn nhiều
+    X_train, y_train, X_test, y_test, y_test_raw = transformer.split_train_test_chronological(df, X_3D, y_3D, train_ratio=0.8)
 
     # 🛠️ CHUẨN BỊ DỮ LIỆU ĐỂ DỊCH NGƯỢC GIÁ THỰC TẾ
-    # Lấy giá đóng cửa ngày hôm nay (close) ứng với tập Test (2024-2025) để phục vụ công thức nhân ngược
+    total = len(X_3D)
+    split_idx = int(total * 0.8)
     df_align = df.iloc[transformer.time_steps:].reset_index(drop=True)
-    df_align['date'] = pd.to_datetime(df_align['date'])
-    test_mask = df_align['date'].dt.year >= 2024
-    test_close_prices = df_align.loc[test_mask, 'close'].values[:len(X_test)]
+    test_close_prices = df_align.loc[split_idx:, 'close'].values[:len(X_test)]
     
     # Ép ngược y_test_raw (đang là tỷ suất lợi nhuận) về giá mở cửa thực tế của ngày mai
     y_test_true_prices = test_close_prices * (1 + y_test_raw)
@@ -138,9 +152,20 @@ def main():
     plt.legend(fontsize=11)
     plt.grid(True, alpha=0.3)
     
-    # Lưu kết quả
+    # Lưu biểu đồ kết quả
     plt.savefig('model_battle_result.png', dpi=300)
     print("💾 Đã xuất biểu đồ so sánh khoa học vào file: 'model_battle_result.png'")
+    
+    # ==========================================
+    # LƯU MODEL SAU KHI TRAIN — TRÁNH TRAIN LẠI LẦN SAU
+    # ==========================================
+    os.makedirs('models', exist_ok=True)
+    joblib.dump(xgb_model, 'models/xgboost_model.pkl')
+    lstm_model.save('models/lstm_model.keras')
+    transformer_model.save('models/transformer_model.keras')
+    joblib.dump(transformer.feature_scaler, 'models/feature_scaler.pkl')
+    joblib.dump(transformer.target_scaler, 'models/target_scaler.pkl')
+    print("✅ Đã lưu toàn bộ model vào thư mục 'models/'")
     # ==========================================
     # BƯỚC 8: DỰ BÁO GIÁ MỞ CỬA PHIÊN TIẾP THEO (TƯƠNG LAI)
     # ==========================================
