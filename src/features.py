@@ -15,7 +15,11 @@ class DataTransformer:
         self.target_scaler = MinMaxScaler(feature_range=(0, 1))
         
         # Định nghĩa các trường dữ liệu đầu vào cho AI
-        self.feature_cols = ['close', 'rsi_14', 'MACD_12_26_9', 'volatility_20', 'close_lag1', 'volume_change', 'intraday_return']
+        self.feature_cols = [
+            'close', 'rsi_14', 'MACD_12_26_9', 'volatility_20', 
+            'close_lag1', 'volume_change', 'intraday_return',
+            'bb_lower', 'bb_middle', 'bb_upper', 'atr_14'
+        ]
         self.target_col = 'target_return' # Đổi tên cột mục tiêu tại đây
 
     def fit_transform_data(self, df: pd.DataFrame):

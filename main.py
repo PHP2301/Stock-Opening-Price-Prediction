@@ -127,7 +127,7 @@ def main():
     trans_preds = test_close_prices * (1 + trans_return_preds)
 
     # ==========================================
-    # BƯỚC 6: ĐÁNH GIÁ SAI SỐ THỰC TẾ (2024 - 2025)
+    # BƯỚC 6: ĐÁNH GIÁ SAI SỐ THỰC TẾ
     # ==========================================
     print("\n" + "="*50)
     print("📊 BẢNG SO SÁNH SAI SỐ TRÊN TẬP KIỂM THỬ ĐÃ CHUẨN HÓA (VNĐ)")
@@ -135,6 +135,10 @@ def main():
     evaluate_predictions(y_test_true_prices, xgb_preds, "XGBoost")
     evaluate_predictions(y_test_true_prices, lstm_preds, "LSTM")
     evaluate_predictions(y_test_true_prices, trans_preds, "Transformer")
+    
+    # Tích hợp mô hình Ensemble (kết hợp 2 mô hình tốt nhất)
+    ensemble_preds = 0.5 * lstm_preds + 0.5 * xgb_preds
+    evaluate_predictions(y_test_true_prices, ensemble_preds, "Ensemble (LSTM + XGBoost)")
 
     # ==========================================
     # BƯỚC 7: TRỰC QUAN HÓA KẾT QUẢ KHOA HỌC
@@ -145,8 +149,9 @@ def main():
     plt.plot(xgb_preds[-100:], label="Dự báo của XGBoost", color='red', linestyle='--')
     plt.plot(lstm_preds[-100:], label="Dự báo của LSTM", color='blue', linestyle='-.')
     plt.plot(trans_preds[-100:], label="Dự báo của Transformer", color='green', linestyle=':')
+    plt.plot(ensemble_preds[-100:], label="Dự báo của Ensemble (LSTM + XGB)", color='purple', linewidth=2, linestyle='-')
     
-    plt.title(f"XU HƯỚNG GIÁ THỰC TẾ VS ĐẦU RA DỰ BÁO QUA TỶ SUẤT LỢI NHUẬN ({TICKER})", fontsize=14, fontweight='bold')
+    plt.title(f"XU HƯỚNG GIÁ THỰC TẾ VS ĐẦU RA DỰ BÁO ({TICKER})", fontsize=14, fontweight='bold')
     plt.xlabel("100 Phiên giao dịch cuối cùng (Tập Test)", fontsize=12)
     plt.ylabel("Giá mở cửa (VNĐ)", fontsize=12)
     plt.legend(fontsize=11)
@@ -183,7 +188,7 @@ def main():
             raw_df.columns = raw_df.columns.droplevel(1)
         raw_df.columns = [col.lower() for col in raw_df.columns]
         
-        # Tính toán lại bộ đặc trưng
+        # Tính toán lại bộ đặc trưng (bao gồm BB & ATR)
         raw_df['rsi_14'] = ta.rsi(raw_df['close'], length=14)
         macd_df = ta.macd(raw_df['close'], fast=12, slow=26, signal=9)
         raw_df = pd.concat([raw_df, macd_df], axis=1)
@@ -192,15 +197,22 @@ def main():
         raw_df['volume_change'] = raw_df['volume'].pct_change()
         raw_df['intraday_return'] = (raw_df['close'] - raw_df['open']) / raw_df['open']
         
-        # Trích xuất 30 ngày gần nhất làm đầu vào
-        recent_features = raw_df[['close', 'rsi_14', 'MACD_12_26_9', 'volatility_20', 'close_lag1', 'volume_change', 'intraday_return']].dropna().tail(30)
+        bb_df = ta.bbands(raw_df['close'], length=20, std=2)
+        raw_df['bb_lower'] = bb_df.iloc[:, 0]
+        raw_df['bb_middle'] = bb_df.iloc[:, 1]
+        raw_df['bb_upper'] = bb_df.iloc[:, 2]
+        raw_df['atr_14'] = ta.atr(raw_df['high'], raw_df['low'], raw_df['close'], length=14)
+        
+        # Trích xuất 30 ngày gần nhất làm đầu vào (Dùng transformer.feature_cols động)
+        recent_features = raw_df[transformer.feature_cols].dropna().tail(30)
         
         if len(recent_features) == 30:
             # Chuẩn hóa đầu vào
             recent_scaled = transformer.feature_scaler.transform(recent_features.values)
-            X_predict = recent_scaled.reshape(1, 30, 7)
+            n_features = len(transformer.feature_cols)
+            X_predict = recent_scaled.reshape(1, 30, n_features)
             
-            # Dự báo với XGBoost (chỉ cần reshape về 2D cho scikit-learn)
+            # Dự báo với XGBoost (reshape về 2D cho scikit-learn)
             xgb_pred_scaled = xgb_model.predict(X_predict.reshape(1, -1)).reshape(-1, 1)
             xgb_return_future = transformer.target_scaler.inverse_transform(xgb_pred_scaled)[0][0]
             
@@ -211,6 +223,9 @@ def main():
             trans_pred_scaled = transformer_model.predict(X_predict, verbose=0)
             trans_return_future = transformer.target_scaler.inverse_transform(trans_pred_scaled)[0][0]
             
+            # Tính dự báo Ensemble
+            ensemble_return_future = 0.5 * lstm_return_future + 0.5 * xgb_return_future
+            
             # Giá đóng cửa hiện tại
             last_close = recent_features['close'].iloc[-1]
             last_date = recent_features.index[-1].strftime('%Y-%m-%d')
@@ -220,6 +235,7 @@ def main():
             print(f"  - 🌳 XGBoost    : {(last_close * (1 + xgb_return_future)):,.0f} VNĐ")
             print(f"  - 🧠 LSTM       : {(last_close * (1 + lstm_return_future)):,.0f} VNĐ")
             print(f"  - 🤖 Transformer: {(last_close * (1 + trans_return_future)):,.0f} VNĐ")
+            print(f"  - 🤝 Ensemble   : {(last_close * (1 + ensemble_return_future)):,.0f} VNĐ")
             print("="*50 + "\n")
         else:
             print("Lỗi: Không đủ dữ liệu 30 ngày sau khi làm sạch để dự báo tương lai.")
