@@ -18,7 +18,8 @@ class DataTransformer:
         self.feature_cols = [
             'close', 'rsi_14', 'MACD_12_26_9', 'volatility_20', 
             'close_lag1', 'volume_change', 'intraday_return',
-            'bb_lower', 'bb_middle', 'bb_upper', 'atr_14'
+            'bb_lower', 'bb_middle', 'bb_upper', 'atr_14',
+            'ema_14', 'roc_10', 'adx_14'
         ]
         self.target_col = 'target_return' # Đổi tên cột mục tiêu tại đây
 
@@ -101,22 +102,31 @@ if __name__ == "__main__":
     from src.data_loader import fetch_and_prepare_data
     
     try:
+        # Cấu hình encoding utf-8 cho Windows console
+        try:
+            sys.stdout.reconfigure(encoding='utf-8')
+        except AttributeError:
+            pass
+            
         print("=== KIỂM THỬ PIPELINE BIẾN ĐỔI FEATURE NÂNG CAO ===")
-        # 1. Gọi lại dữ liệu sạch từ Module 1
-        df = fetch_and_prepare_data("VNM.VN", start_date="2015-01-01", end_date="2026-05-20")
-        
-        # 2. Khởi tạo bộ biến đổi với cửa sổ trượt 30 phiên
-        transformer = DataTransformer(time_steps=30)
-        X_scaled, y_scaled = transformer.fit_transform_data(df)
-        
-        # 3. Tạo mảng 3D Tensor
-        X_3D, y_3D = transformer.create_sliding_windows(X_scaled, y_scaled)
-        print(f"📦 Kích thước mảng 3D của Tập dữ liệu tổng (X_3D Shape): {X_3D.shape}")
-        
-        # 4. Chia tách Train - Test theo đúng mốc năm tài chính
-        X_train, y_train, X_test, y_test, y_test_raw = transformer.split_train_test_by_year(df, X_3D, y_3D)
-        print(f"🔹 Tập Huấn luyện (Train Set) 2015-2023: X_train = {X_train.shape}, y_train = {y_train.shape}")
-        print(f"🔸 Tập Kiểm thử (Test Set) 2024-Nay: X_test = {X_test.shape}, y_test = {y_test.shape}")
-        
+        tickers = ["VNM.VN", "GOOGL", "META"]
+        for ticker in tickers:
+            print(f"\n==============================")
+            print(f"🔬 Đang biến đổi mã: {ticker}")
+            print(f"==============================")
+            df = fetch_and_prepare_data(ticker, start_date="2010-01-01", end_date="2026-05-20")
+            
+            # Khởi tạo bộ biến đổi với cửa sổ trượt 30 phiên
+            transformer = DataTransformer(time_steps=30)
+            X_scaled, y_scaled = transformer.fit_transform_data(df)
+            
+            # Tạo mảng 3D Tensor
+            X_3D, y_3D = transformer.create_sliding_windows(X_scaled, y_scaled)
+            print(f"📦 Kích thước mảng 3D (X_3D Shape): {X_3D.shape}")
+            
+            # Chia tách Train - Test theo thời gian
+            X_train, y_train, X_test, y_test, y_test_raw = transformer.split_train_test_chronological(df, X_3D, y_3D, train_ratio=0.8)
+            print(f"🔹 Tập Huấn luyện: X_train = {X_train.shape}, y_train = {y_train.shape}")
+            print(f"🔸 Tập Kiểm thử   : X_test = {X_test.shape}, y_test = {y_test.shape}")
     except Exception as e:
-        print(f"💥 Lỗi thực thi Module 2: {e}")
+        print(f"Lỗi kiểm thử features: {e}")

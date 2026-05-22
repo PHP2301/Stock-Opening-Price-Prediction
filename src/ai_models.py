@@ -2,8 +2,8 @@ import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # Ẩn các cảnh báo hệ thống của TensorFlow
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras.models import Sequential, Model
-from tensorflow.keras.layers import LSTM, Dense, Dropout, Input, MultiHeadAttention, LayerNormalization, GlobalAveragePooling1D
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Dense, Dropout, Input, MultiHeadAttention, LayerNormalization, Flatten
 from xgboost import XGBRegressor
 
 # ==========================================
@@ -16,14 +16,14 @@ def build_xgboost_optimized(X_train_flat, y_train):
     Sử dụng thuật toán GridSearchCV kết hợp TimeSeriesSplit 
     để tự động tìm bộ tham số tối ưu nhất cho XGBoost.
     """
-    xgb_model = XGBRegressor(random_state=42, n_jobs=-1)
+    xgb_model = XGBRegressor(random_state=42, n_jobs=1)
     
-    # Định nghĩa "lưới" các tham số cần thử nghiệm
     param_grid = {
-        'n_estimators': [100, 200, 300],
-        'max_depth': [3, 5, 7],
-        'learning_rate': [0.01, 0.05, 0.1],
-        'subsample': [0.8, 1.0]
+        'n_estimators': [100, 200],
+        'max_depth': [3, 5],
+        'learning_rate': [0.05, 0.1],
+        'subsample': [0.8, 1.0],
+        'colsample_bytree': [0.8, 1.0]
     }
     
     # Chia tập kiểm thử chéo dạng chuỗi thời gian (không làm xáo trộn ngày tháng)
@@ -44,48 +44,11 @@ def build_xgboost_optimized(X_train_flat, y_train):
     print(f"🔥 Tham số tối ưu tìm được: {grid_search.best_params_}")
     return grid_search.best_estimator_
 
-# ==========================================
-# 2. MÔ HÌNH LSTM (Long Short-Term Memory)
-# ==========================================
-def build_lstm(input_shape):
-    """
-    Xây dựng mạng nơ-ron LSTM chuyên sâu cho chuỗi thời gian tài chính.
-    input_shape: (time_steps, features) -> Hiện tại là (30, 5)
-    """
-    model = Sequential([
-        Input(shape=input_shape),
-        # Lớp LSTM đầu tiên, trả về toàn bộ chuỗi để lớp sau học tiếp
-        LSTM(units=64, return_sequences=True),
-        Dropout(0.2), # Ngắt ngẫu nhiên 20% nơ-ron chống Overfitting
-        
-        # Lớp LSTM thứ hai, nén thông tin chuỗi lại
-        LSTM(units=32, return_sequences=False),
-        Dropout(0.2),
-        
-        # Lớp liên kết hoàn toàn (Dense) để đưa ra 1 con số giá mở cửa duy nhất
-        Dense(units=16, activation='relu'),
-        Dense(units=1)
-    ])
-    
-    # Biên dịch mô hình với thuật toán tối ưu Adam và hàm mất mát MSE
-    model.compile(optimizer='adam', loss='mean_squared_error')
-    return model
 
 # ==========================================
 # 3. MÔ HÌNH TRANSFORMER (Encoder Only)
 # ==========================================
-def transformer_encoder(inputs, head_size, num_heads, ff_dim, dropout=0):
-    """Một khối Encoder tiêu chuẩn của Transformer sử dụng cơ chế Self-Attention"""
-    # Lớp chú ý đa đầu (Multi-Head Self-Attention)
-    x = MultiHeadAttention(key_dim=head_size, num_heads=num_heads, dropout=dropout)(inputs, inputs)
-    x = Dropout(dropout)(x)
-    res = LayerNormalization(epsilon=1e-6)(x + inputs) # Residual Connection + Chuẩn hóa lớp
-
-    # Lớp Feed Forward (Mạng truyền thẳng)
-    x = Dense(ff_dim, activation="relu")(res)
-    x = Dropout(dropout)(x)
-    x = Dense(inputs.shape[-1])(x)
-    return LayerNormalization(epsilon=1e-6)(x + res)
+@tf.keras.utils.register_keras_serializable()
 class PositionalEmbedding(tf.keras.layers.Layer):
     """Lớp toán học gán thẻ thứ tự thời gian cho dữ liệu chuỗi"""
     def __init__(self, sequence_length, d_model, **kwargs):
@@ -99,35 +62,84 @@ class PositionalEmbedding(tf.keras.layers.Layer):
         embedded_positions = self.pos_emb(positions)
         return inputs + embedded_positions
 
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            "sequence_length": self.sequence_length,
+            "d_model": self.d_model,
+        })
+        return config
+
 def build_transformer(input_shape):
-    """Xây dựng kiến trúc mạng Transformer hoàn chỉnh để dự báo chuỗi số"""
+    """
+    Xây dựng kiến trúc mạng Transformer sâu hơn để học tốt hơn trên chuỗi thời gian:
+    - 2 Lớp Multi-Head Attention (8 heads, key_dim=128)
+    - Residual Connections & Layer Normalization
+    - Feed-Forward Networks cho từng block
+    - Tăng số neuron lớp Dense để khớp dữ liệu phức tạp
+    """
     inputs = Input(shape=input_shape)
     
-    # Chạy qua một khối Transformer Encoder
-    x = transformer_encoder(inputs, head_size=64, num_heads=4, ff_dim=64, dropout=0.2)
+    # 1. Project input features to hidden size d_model
+    d_model = 128
+    x = Dense(d_model)(inputs)
     
-    # Nén không gian thời gian (30 phiên) về dạng phẳng cố định
-    x = GlobalAveragePooling1D()(x)
+    # 2. Add Positional Embedding
+    x = PositionalEmbedding(sequence_length=input_shape[0], d_model=d_model)(x)
+    
+    # --- BLOCK 1 ---
+    # Multi-Head Attention
+    attn_1 = MultiHeadAttention(key_dim=128, num_heads=8, dropout=0.2)(x, x)
+    attn_1 = Dropout(0.2)(attn_1)
+    x = LayerNormalization(epsilon=1e-6)(x + attn_1)  # Residual connection 1
+    
+    # Feed Forward Network 1
+    ffn_1 = Dense(256, activation="relu")(x)
+    ffn_1 = Dropout(0.2)(ffn_1)
+    ffn_1 = Dense(d_model)(ffn_1)
+    x = LayerNormalization(epsilon=1e-6)(x + ffn_1)  # Residual connection 2
+    
+    # --- BLOCK 2 ---
+    # Multi-Head Attention
+    attn_2 = MultiHeadAttention(key_dim=128, num_heads=8, dropout=0.2)(x, x)
+    attn_2 = Dropout(0.2)(attn_2)
+    x = LayerNormalization(epsilon=1e-6)(x + attn_2)  # Residual connection 3
+    
+    # Feed Forward Network 2
+    ffn_2 = Dense(256, activation="relu")(x)
+    ffn_2 = Dropout(0.2)(ffn_2)
+    ffn_2 = Dense(d_model)(ffn_2)
+    x = LayerNormalization(epsilon=1e-6)(x + ffn_2)  # Residual connection 4
+    
+    # 4. Flatten to retain complete temporal structure
+    x = Flatten()(x)
+    
+    # 5. Output layers
+    x = Dense(128, activation="relu")(x)
     x = Dropout(0.2)(x)
-    
-    # Lớp Dense đầu ra để dự báo giá
+    x = Dense(64, activation="relu")(x)
+    x = Dropout(0.2)(x)
     x = Dense(32, activation="relu")(x)
     outputs = Dense(1)(x)
     
     model = Model(inputs, outputs)
-    model.compile(optimizer='adam', loss='mean_squared_error')
+    
+    # Use a smaller learning rate to prevent early overfitting on scaled return targets
+    optimizer = tf.keras.optimizers.Adam(learning_rate=1e-4)
+    model.compile(optimizer=optimizer, loss='mean_squared_error')
     return model
 
 if __name__ == "__main__":
     import sys
     import os
+    # Cấu hình UTF-8 cho console để in tiếng Việt không lỗi trên Windows
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8')
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-    # Chạy kiểm thử độc lập xem TensorFlow có dựng được khung xương mô hình mà không lỗi cấu trúc
-    print("=== KIỂM THỬ KIẾN TRÚC MÔ HÌNH AI ===")
-    sample_shape = (30, 7)
+    # Run independent architecture compilation tests
+    print("=== TESTING AI MODEL ARCHITECTURES ===")
+    sample_shape = (45, 14)
     
-    lstm_m = build_lstm(sample_shape)
-    print(f"✅ Khởi tạo mạng LSTM thành công! Tổng số lớp: {len(lstm_m.layers)}")
     
     trans_m = build_transformer(sample_shape)
-    print(f"✅ Khởi tạo mạng Transformer thành công! Đầu ra mô hình: {trans_m.output_shape}")
+    print(f"Transformer model built successfully! Output shape: {trans_m.output_shape}")
