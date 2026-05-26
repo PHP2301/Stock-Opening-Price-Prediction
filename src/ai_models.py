@@ -3,50 +3,54 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # Ẩn các cảnh báo hệ thống c
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Dense, Dropout, Input, MultiHeadAttention, LayerNormalization, Flatten
+from tensorflow.keras.layers import Dense, Dropout, Input, MultiHeadAttention, LayerNormalization, Flatten, Conv1D
 from xgboost import XGBRegressor
 
 # ==========================================
-# 1. MÔ HÌNH XGBOOST (Cần làm phẳng dữ liệu 3D thành 2D)
+# 1. MÔ HÌNH XGBoost (Cần làm phẳng dữ liệu 3D thành 2D)
 # ==========================================
-from sklearn.model_selection import TimeSeriesSplit, GridSearchCV
+from sklearn.model_selection import TimeSeriesSplit, RandomizedSearchCV
 
 def build_xgboost_optimized(X_train_flat, y_train):
     """
-    Sử dụng thuật toán GridSearchCV kết hợp TimeSeriesSplit 
-    để tự động tìm bộ tham số tối ưu nhất cho XGBoost.
+    Sử dụng thuật toán RandomizedSearchCV kết hợp TimeSeriesSplit 
+    để tự động tìm bộ tham số tối ưu nhất cho XGBoost một cách nhanh chóng.
     """
+    # Đặt n_jobs=1 cho XGBRegressor đơn lẻ để tránh tranh chấp tài nguyên với n_jobs=-1 của RandomizedSearchCV
     xgb_model = XGBRegressor(random_state=42, n_jobs=1)
     
-    param_grid = {
-        'n_estimators': [100, 200],
-        'max_depth': [3, 5],
-        'learning_rate': [0.05, 0.1],
-        'subsample': [0.8, 1.0],
-        'colsample_bytree': [0.8, 1.0]
+    # Định nghĩa không gian tham số rộng hơn
+    param_distributions = {
+        'n_estimators': [100, 150, 200],
+        'max_depth': [3, 4, 5],
+        'learning_rate': [0.03, 0.05, 0.1],
+        'subsample': [0.8, 0.9, 1.0],
+        'colsample_bytree': [0.8, 0.9, 1.0]
     }
     
     # Chia tập kiểm thử chéo dạng chuỗi thời gian (không làm xáo trộn ngày tháng)
     tscv = TimeSeriesSplit(n_splits=5)
     
-    # Khởi động thuật toán quét ma trận tham số
-    grid_search = GridSearchCV(
+    # Sử dụng RandomizedSearchCV để thử ngẫu nhiên 6 cấu hình tối ưu nhất
+    search = RandomizedSearchCV(
         estimator=xgb_model, 
-        param_grid=param_grid, 
+        param_distributions=param_distributions, 
+        n_iter=6,
         cv=tscv, 
         scoring='neg_mean_absolute_error', 
-        n_jobs=-1
+        n_jobs=-1,
+        random_state=42
     )
     
-    print("⏳ Đang quét tìm bộ tham số tốt nhất cho XGBoost...")
-    grid_search.fit(X_train_flat, y_train.ravel())
+    print("⏳ Đang quét nhanh bộ tham số tối ưu cho XGBoost...")
+    search.fit(X_train_flat, y_train.ravel())
     
-    print(f"🔥 Tham số tối ưu tìm được: {grid_search.best_params_}")
-    return grid_search.best_estimator_
+    print(f"🔥 Tham số tối ưu tìm được: {search.best_params_}")
+    return search.best_estimator_
 
 
 # ==========================================
-# 3. MÔ HÌNH TRANSFORMER (Encoder Only)
+# 2. MÔ HÌNH TRANSFORMER (Encoder Only)
 # ==========================================
 @tf.keras.utils.register_keras_serializable()
 class PositionalEmbedding(tf.keras.layers.Layer):
@@ -73,60 +77,67 @@ class PositionalEmbedding(tf.keras.layers.Layer):
 def build_transformer(input_shape):
     """
     Xây dựng kiến trúc mạng Transformer sâu hơn để học tốt hơn trên chuỗi thời gian:
-    - 2 Lớp Multi-Head Attention (8 heads, key_dim=128)
+    - 2 Lớp Multi-Head Attention (8 heads, key_dim=128, dropout=0.3)
     - Residual Connections & Layer Normalization
-    - Feed-Forward Networks cho từng block
-    - Tăng số neuron lớp Dense để khớp dữ liệu phức tạp
+    - Feed-Forward Networks cho từng block với L2 regularization
+    - Tăng số neuron lớp Dense để khớp dữ liệu phức tạp và chống overfitting
     """
     inputs = Input(shape=input_shape)
     
-    # 1. Project input features to hidden size d_model
+    # 1. Conv1D layer to extract local patterns (filters=128, kernel_size=3)
     d_model = 128
-    x = Dense(d_model)(inputs)
+    x = Conv1D(
+        filters=d_model, 
+        kernel_size=3, 
+        padding='same', 
+        activation='relu',
+        kernel_regularizer=tf.keras.regularizers.l2(1e-4)
+    )(inputs)
+    x = LayerNormalization(epsilon=1e-6)(x)
     
     # 2. Add Positional Embedding
     x = PositionalEmbedding(sequence_length=input_shape[0], d_model=d_model)(x)
     
     # --- BLOCK 1 ---
     # Multi-Head Attention
-    attn_1 = MultiHeadAttention(key_dim=128, num_heads=8, dropout=0.2)(x, x)
-    attn_1 = Dropout(0.2)(attn_1)
+    attn_1 = MultiHeadAttention(key_dim=128, num_heads=8, dropout=0.3)(x, x)
+    attn_1 = Dropout(0.3)(attn_1)
     x = LayerNormalization(epsilon=1e-6)(x + attn_1)  # Residual connection 1
     
     # Feed Forward Network 1
-    ffn_1 = Dense(256, activation="relu")(x)
-    ffn_1 = Dropout(0.2)(ffn_1)
-    ffn_1 = Dense(d_model)(ffn_1)
+    ffn_1 = Dense(256, activation="relu", kernel_regularizer=tf.keras.regularizers.l2(1e-4))(x)
+    ffn_1 = Dropout(0.3)(ffn_1)
+    ffn_1 = Dense(d_model, kernel_regularizer=tf.keras.regularizers.l2(1e-4))(ffn_1)
     x = LayerNormalization(epsilon=1e-6)(x + ffn_1)  # Residual connection 2
     
     # --- BLOCK 2 ---
     # Multi-Head Attention
-    attn_2 = MultiHeadAttention(key_dim=128, num_heads=8, dropout=0.2)(x, x)
-    attn_2 = Dropout(0.2)(attn_2)
+    attn_2 = MultiHeadAttention(key_dim=128, num_heads=8, dropout=0.3)(x, x)
+    attn_2 = Dropout(0.3)(attn_2)
     x = LayerNormalization(epsilon=1e-6)(x + attn_2)  # Residual connection 3
     
     # Feed Forward Network 2
-    ffn_2 = Dense(256, activation="relu")(x)
-    ffn_2 = Dropout(0.2)(ffn_2)
-    ffn_2 = Dense(d_model)(ffn_2)
+    ffn_2 = Dense(256, activation="relu", kernel_regularizer=tf.keras.regularizers.l2(1e-4))(x)
+    ffn_2 = Dropout(0.3)(ffn_2)
+    ffn_2 = Dense(d_model, kernel_regularizer=tf.keras.regularizers.l2(1e-4))(ffn_2)
     x = LayerNormalization(epsilon=1e-6)(x + ffn_2)  # Residual connection 4
     
     # 4. Flatten to retain complete temporal structure
     x = Flatten()(x)
     
     # 5. Output layers
-    x = Dense(128, activation="relu")(x)
-    x = Dropout(0.2)(x)
-    x = Dense(64, activation="relu")(x)
-    x = Dropout(0.2)(x)
-    x = Dense(32, activation="relu")(x)
+    x = Dense(128, activation="relu", kernel_regularizer=tf.keras.regularizers.l2(1e-4))(x)
+    x = Dropout(0.3)(x)
+    x = Dense(64, activation="relu", kernel_regularizer=tf.keras.regularizers.l2(1e-4))(x)
+    x = Dropout(0.3)(x)
+    x = Dense(32, activation="relu", kernel_regularizer=tf.keras.regularizers.l2(1e-4))(x)
     outputs = Dense(1)(x)
     
     model = Model(inputs, outputs)
     
     # Use a smaller learning rate to prevent early overfitting on scaled return targets
     optimizer = tf.keras.optimizers.Adam(learning_rate=1e-4)
-    model.compile(optimizer=optimizer, loss='mean_squared_error')
+    model.compile(optimizer=optimizer, loss='huber')
     return model
 
 if __name__ == "__main__":
@@ -138,7 +149,7 @@ if __name__ == "__main__":
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
     # Run independent architecture compilation tests
     print("=== TESTING AI MODEL ARCHITECTURES ===")
-    sample_shape = (45, 14)
+    sample_shape = (45, 16)
     
     
     trans_m = build_transformer(sample_shape)

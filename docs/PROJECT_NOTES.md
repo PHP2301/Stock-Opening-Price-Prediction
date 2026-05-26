@@ -92,27 +92,27 @@ Dưới đây là kết quả sai số MAE và sai số phần trăm (MAPE) trê
 
 ### 🇻🇳 Vinamilk (VNM.VN) - Đơn vị: VNĐ
 *   🌳 **XGBoost:**
-    *   *Sai số RMSE:* **396,03 VNĐ**
-    *   *Sai số MAE:* **223,30 VNĐ** (Lệch trung bình: **0.37%**) 🟢
+    *   *Sai số RMSE:* **399,54 VNĐ**
+    *   *Sai số MAE:* **224,26 VNĐ** (Lệch trung bình: **0.37%**) 🟢
 *   🤖 **Transformer:**
-    *   *Sai số RMSE:* **518,62 VNĐ**
-    *   *Sai số MAE:* **401,44 VNĐ** (Lệch trung bình: **0.67%**) 🟢
+    *   *Sai số RMSE:* **594,26 VNĐ**
+    *   *Sai số MAE:* **475,02 VNĐ** (Lệch trung bình: **0.79%**) 🟢
 
 ### 🇺🇸 Alphabet / Google (GOOGL) - Đơn vị: VNĐ & USD
 *   🌳 **XGBoost:**
-    *   *Sai số RMSE:* **71.989,21 VNĐ** (~$2.83 USD)
-    *   *Sai số MAE:* **41.090,33 VNĐ** (~$1.62 USD - Lệch trung bình: **0.85%**) 🟢
+    *   *Sai số RMSE:* **71.028,03 VNĐ** (~$2.80 USD)
+    *   *Sai số MAE:* **40.256,13 VNĐ** (~$1.58 USD - Lệch trung bình: **0.83%**) 🟢
 *   🤖 **Transformer:**
-    *   *Sai số RMSE:* **104.386,36 VNĐ** (~$4.11 USD)
-    *   *Sai số MAE:* **74.021,98 VNĐ** (~$2.91 USD - Lệch trung bình: **1.52%**) 🟢
+    *   *Sai số RMSE:* **147.387,46 VNĐ** (~$5.80 USD)
+    *   *Sai số MAE:* **101.113,12 VNĐ** (~$3.98 USD - Lệch trung bình: **1.87%**)
 
 ### 🇺🇸 Meta Platforms (META) - Đơn vị: VNĐ & USD
 *   🌳 **XGBoost:**
-    *   *Sai số RMSE:* **859.668,74 VNĐ** (~$33.85 USD)
-    *   *Sai số MAE:* **747.162,18 VNĐ** (~$29.42 USD - Lệch trung bình: **4.89%**)
+    *   *Sai số RMSE:* **738.908,69 VNĐ** (~$29.09 USD)
+    *   *Sai số MAE:* **640.288,60 VNĐ** (~$25.21 USD - Lệch trung bình: **4.20%**) 🟢
 *   🤖 **Transformer:**
-    *   *Sai số RMSE:* **853.236,85 VNĐ** (~$33.59 USD)
-    *   *Sai số MAE:* **741.061,81 VNĐ** (~$29.18 USD - Lệch trung bình: **4.95%**)
+    *   *Sai số RMSE:* **1.076.357,27 VNĐ** (~$42.38 USD)
+    *   *Sai số MAE:* **1.016.060,17 VNĐ** (~$40.00 USD - Lệch trung bình: **7.18%**)
 
 ---
 
@@ -130,3 +130,22 @@ python main.py
 ```powershell
 python clean_workspace.py
 ```
+
+---
+
+## 5. CASE STUDY: XỬ LÝ NHIỄU TỶ GIÁ LỊCH SỬ (USD/VND)
+
+Trong quá trình huấn luyện mô hình cho các mã cổ phiếu Mỹ (GOOGL, META) quy đổi sang VNĐ, hệ thống đã phát hiện và xử lý thành công lỗi nhiễu dữ liệu tỷ giá nghiêm trọng từ nguồn Yahoo Finance (`USDVND=X`).
+
+### Ví dụ thực tế về sự tăng vọt và rơi thảm ảo trong 1 ngày (Mã META):
+*   **Ngày 29-04-2014:** Giá đóng cửa của META là **$57.70 USD**, tỷ giá `USDVND=X` là **21.061 VNĐ** $\rightarrow$ Giá quy đổi là **1.215.161 VNĐ**.
+*   **Ngày 30-04-2014 (Phiên lỗi):** Giá đóng cửa của META tăng lên **$59.31 USD**, tuy nhiên tỷ giá `USDVND=X` bị Yahoo Finance ghi nhận sai lệch nghiêm trọng rơi về **3.210 VNĐ** (thay vì khoảng ~21.000 VNĐ). 
+    *   Việc này làm giá quy đổi META bị sụt giảm nhân tạo thảm hại xuống **190.399 VNĐ** (giảm gần 6.4 lần!).
+*   **Ngày 01-05-2014:** Giá đóng cửa của META là **$60.67 USD**, tỷ giá phục hồi về **21.050 VNĐ** $\rightarrow$ Giá quy đổi tăng vọt lên **1.277.185 VNĐ**.
+*   **Hệ quả lỗi:**
+    *   Tạo ra một mức sinh lời ảo đột biến: ngày 30-04-2014 tỷ suất sinh lời mở cửa ngày tiếp theo (`target_return`) vọt lên **+562.89%** (tăng 5.6 lần), và ngay hôm sau rơi thảm hại **-84.9%**.
+    *   Khi sử dụng `MinMaxScaler`, các giá trị nhiễu `+562%` này đã ép chặt các ngày giao dịch bình thường (chỉ từ `-1%` đến `+1%`) về một dải hẹp quanh `0.5`, khiến mô hình Transformer mất khả năng học và dự báo ra giá trị âm.
+
+### Cách khắc phục trong Code:
+*   **Lọc tỷ giá thông minh:** Bất kỳ tỷ giá nào nằm ngoài khoảng lịch sử thực tế `[15.000 VNĐ - 28.000 VNĐ]` sẽ bị đặt thành `NaN` và điền khuyết bằng phương pháp forward fill (`ffill`) và backward fill (`bfill`).
+*   **Chuyển đổi Scaler:** Sử dụng `StandardScaler` thay thế cho `MinMaxScaler` giúp mô hình ổn định trọng số và hoàn toàn không bị ảnh hưởng bởi các giá trị ngoại lai (outliers) còn sót lại.

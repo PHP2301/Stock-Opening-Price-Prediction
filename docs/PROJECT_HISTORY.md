@@ -42,6 +42,14 @@ Tài liệu này ghi lại toàn bộ lộ trình phát triển, các khó khăn
     *   **Giải quyết lỗi Treo Hệ thống:** Sửa lỗi Matplotlib GUI bị treo vô hạn trên Windows console bằng cách ép buộc Matplotlib chạy ở chế độ headless (`matplotlib.use('Agg')`).
     *   **Khắc phục lỗi Unicode trên Console:** Cấu hình lại chuẩn mã hóa của console (`sys.stdout.reconfigure(encoding='utf-8')`) để hiển thị thông tin và log tiếng Việt hoàn hảo trên Windows PowerShell/CMD.
 
+### 🟣 Ngày 6: Tích Hợp 3 Nâng Cấp Sâu & Hệ Thống Hóa Kiến Trúc
+*   **Mục tiêu:** Tích hợp đồng thời 3 nâng cấp chuyên sâu (Market Index, Conv1D-Transformer, Cosine Decay) và cung cấp tài liệu kiến trúc toàn diện từ đầu đến cuối.
+*   **Công việc đã làm:**
+    *   **Tích hợp chỉ số thị trường vĩ mô (`market_return`):** Tự động tải chỉ số ETF vĩ mô đại diện thị trường Việt Nam (`VNM`) và chỉ số Mỹ (`^GSPC`) để tính tỷ suất sinh lời thị trường và đưa vào làm đặc trưng đầu vào thứ 15.
+    *   **Mạng lai ghép Conv1D-Transformer:** Thêm lớp trích xuất đặc trưng cục bộ `Conv1D` trước Positional Embedding để tối ưu hóa khả năng nắm bắt chuyển động chuỗi thời gian ngắn hạn.
+    *   **Hạ tốc độ học Cosine Decay:** Thay thế `ReduceLROnPlateau` bằng callback `LearningRateScheduler` suy giảm Cosine giúp mạng Neural hội tụ tối ưu hơn.
+    *   **Hệ thống hóa tài liệu kiến trúc:** Tạo folder mới và viết file `docs/explain/system_overview.md` để giải thích cặn kẽ nguyên lý hoạt động của toàn bộ hệ thống từ đầu đến cuối cho người dùng.
+
 ---
 
 ## 🏆 KẾT QUẢ ĐẠT ĐƯỢC SAU NÂNG CẤP
@@ -49,14 +57,14 @@ Tài liệu này ghi lại toàn bộ lộ trình phát triển, các khó khăn
 Nhờ các cải tiến trên, sai số dự báo trung bình tuyệt đối (MAE) trên tập kiểm thử đã giảm đáng kể:
 
 1.  **Mã Vinamilk (VNM.VN):**
-    *   *XGBoost:* MAE **223,30 VNĐ** (Lệch **0.37%**).
-    *   *Transformer:* MAE **401,44 VNĐ** (Lệch **0.67%**).
+    *   *XGBoost:* MAE **224,26 VNĐ** (Lệch **0.37%**).
+    *   *Transformer:* MAE **475,02 VNĐ** (Lệch **0.79%**).
 2.  **Mã Google (GOOGL):**
-    *   *XGBoost:* MAE **41.090,33 VNĐ** (~$1.62 USD, Lệch **0.85%**).
-    *   *Transformer:* MAE **74.021,98 VNĐ** (~$2.91 USD, Lệch **1.52%**).
+    *   *XGBoost:* MAE **40.256,13 VNĐ** (~$1.58 USD, Lệch **0.83%**).
+    *   *Transformer:* MAE **101.113,12 VNĐ** (~$3.98 USD, Lệch **1.87%**).
 3.  **Mã Meta (META):**
-    *   *XGBoost:* MAE **747.162,18 VNĐ** (~$29.42 USD, Lệch **4.89%**).
-    *   *Transformer:* MAE **741.061,81 VNĐ** (~$29.18 USD, Lệch **4.95%**).
+    *   *XGBoost:* MAE **640.288,60 VNĐ** (~$25.21 USD, Lệch **4.20%**).
+    *   *Transformer:* MAE **1.016.060,17 VNĐ** (~$40.00 USD, Lệch **7.18%**).
 
 ---
 
@@ -66,5 +74,6 @@ Nhờ các cải tiến trên, sai số dự báo trung bình tuyệt đối (MA
 *   `src/data_loader.py`: Tải dữ liệu từ Yahoo Finance & DNSE API, đồng nhất tiền tệ, xử lý khuyết thiếu, và tính toán các đặc trưng chỉ báo kỹ thuật.
 *   `src/features.py`: Lớp `DataTransformer` phụ trách việc co giãn dữ liệu (MinMaxScaler) và tạo cửa sổ trượt 3D cho các mô hình.
 *   `src/ai_models.py`: Định nghĩa kiến trúc mạng Transformer chuyên sâu và luồng GridSearchCV tối ưu XGBoost (hoàn toàn không còn LSTM).
+*   `docs/explain/system_overview.md`: Tài liệu giải thích chi tiết toàn bộ nguyên lý hoạt động và luồng đi của dữ liệu từ đầu đến cuối của dự án.
 *   `docs/PROJECT_NOTES.md`: Báo cáo chi tiết và tài liệu hướng dẫn kỹ thuật cho người dùng.
 *   `notebooks/01_EDA.ipynb`: Jupyter Notebook phân tích và trực quan hóa dữ liệu khám phá.

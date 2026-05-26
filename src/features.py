@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 
 class DataTransformer:
     def __init__(self, time_steps: int = 30):
@@ -10,22 +10,25 @@ class DataTransformer:
         """
         self.time_steps = time_steps
         # Khởi tạo 2 bộ scaler độc lập: 1 cho các đặc trưng đầu vào, 1 riêng cho biến mục tiêu (Target)
-        # Việc tách riêng scaler giúp sau này chúng ta dễ dàng nghịch đảo (Inverse Transform) để lấy lại giá tiền thực tế
-        self.feature_scaler = MinMaxScaler(feature_range=(0, 1))
-        self.target_scaler = MinMaxScaler(feature_range=(0, 1))
+        # Sử dụng StandardScaler để tránh bị ảnh hưởng bởi các giá trị ngoại lai (outliers)
+        self.feature_scaler = StandardScaler()
+        self.target_scaler = StandardScaler()
         
         # Định nghĩa các trường dữ liệu đầu vào cho AI
         self.feature_cols = [
             'close', 'rsi_14', 'MACD_12_26_9', 'volatility_20', 
-            'close_lag1', 'volume_change', 'intraday_return',
+            'close_lag1', 'close_lag2', 'close_lag3',
+            'open_lag1', 'open_lag2', 'rsi_lag1',
+            'volume_change', 'intraday_return',
             'bb_lower', 'bb_middle', 'bb_upper', 'atr_14',
-            'ema_14', 'roc_10', 'adx_14'
+            'ema_14', 'roc_10', 'adx_14', 'market_return', 'vix',
+            'sentiment_score', 'news_volume'
         ]
         self.target_col = 'target_return' # Đổi tên cột mục tiêu tại đây
 
     def fit_transform_data(self, df: pd.DataFrame):
         """
-        Thực hiện chuẩn hóa dữ liệu về khoảng [0, 1].
+        Thực hiện chuẩn hóa dữ liệu sử dụng StandardScaler (mean=0, std=1).
         """
         # Trích xuất mảng giá trị thô
         X_raw = df[self.feature_cols].values
@@ -88,7 +91,7 @@ class DataTransformer:
         df_align = df.iloc[self.time_steps:].reset_index(drop=True)
         y_test_raw = df_align.loc[split_idx:, self.target_col].values
         
-        print(f"📊 Chia dữ liệu theo tỷ lệ {int(train_ratio*100)}/{int((1-train_ratio)*100)}:")
+        print(f"📊 Chia dữ liệu theo tỷ lệ {int(round(train_ratio*100))}/{int(round((1-train_ratio)*100))}:")
         print(f"   🔹 Train: {X_train.shape[0]} mẫu")
         print(f"   🔸 Test : {X_test.shape[0]} mẫu")
         
