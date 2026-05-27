@@ -284,36 +284,86 @@ def fetch_and_prepare_data(ticker: str, start_date: str = "2015-01-01", end_date
     df = pd.merge(df, df_vix, on='date', how='left')
     df['vix'] = df['vix'].ffill().bfill().fillna(20.0)
 
-    df['rsi_14'] = ta.rsi(df['close'], length=14)
+    # Tải Chỉ số Lợi suất trái phiếu chính phủ Mỹ 10 năm (^TNX)
+    try:
+        print(f"  [MACRO] Dang tai chi so loi suat trai phieu ^TNX tu Yahoo Finance...")
+        raw_tnx = yf.download("^TNX", start=start_date, end=end_date, progress=False)
+        if not raw_tnx.empty:
+            df_tnx = raw_tnx.reset_index()
+            if isinstance(df_tnx.columns, pd.MultiIndex):
+                df_tnx.columns = [str(col[0]).lower() for col in df_tnx.columns]
+            else:
+                df_tnx.columns = [str(col).lower() for col in df_tnx.columns]
+            df_tnx['date'] = pd.to_datetime(df_tnx['date'])
+            df_tnx = df_tnx[['date', 'close']].rename(columns={'close': 'bond_yield_10y'})
+        else:
+            df_tnx = pd.DataFrame(columns=['date', 'bond_yield_10y'])
+    except Exception as e:
+        print(f"  [WARNING] Khong the tai ^TNX: {e}")
+        df_tnx = pd.DataFrame(columns=['date', 'bond_yield_10y'])
+
+    df = pd.merge(df, df_tnx, on='date', how='left')
+    df['bond_yield_10y'] = df['bond_yield_10y'].ffill().bfill().fillna(4.0)
+
+    # Tải Chỉ số Dollar Index (DX-Y.NYB)
+    try:
+        print(f"  [MACRO] Dang tai chi so Dollar Index DX-Y.NYB tu Yahoo Finance...")
+        raw_dxy = yf.download("DX-Y.NYB", start=start_date, end=end_date, progress=False)
+        if not raw_dxy.empty:
+            df_dxy = raw_dxy.reset_index()
+            if isinstance(df_dxy.columns, pd.MultiIndex):
+                df_dxy.columns = [str(col[0]).lower() for col in df_dxy.columns]
+            else:
+                df_dxy.columns = [str(col).lower() for col in df_dxy.columns]
+            df_dxy['date'] = pd.to_datetime(df_dxy['date'])
+            df_dxy['dollar_index_change'] = df_dxy['close'].pct_change()
+            df_dxy = df_dxy[['date', 'dollar_index_change']]
+        else:
+            df_dxy = pd.DataFrame(columns=['date', 'dollar_index_change'])
+    except Exception as e:
+        print(f"  [WARNING] Khong the tai DX-Y.NYB: {e}")
+        df_dxy = pd.DataFrame(columns=['date', 'dollar_index_change'])
+
+    df = pd.merge(df, df_dxy, on='date', how='left')
+    df['dollar_index_change'] = df['dollar_index_change'].fillna(0.0)
+
+    # Áp dụng Kalman Filter để làm mịn giá đóng cửa
+    try:
+        from src.features import kalman_filter
+    except ImportError:
+        from features import kalman_filter
+    df['close_smoothed'] = kalman_filter(df['close'])
+
+    df['rsi_14'] = ta.rsi(df['close_smoothed'], length=14)
     df['rsi_lag1'] = df['rsi_14'].shift(1)
 
-    macd_df = ta.macd(df['close'], fast=12, slow=26, signal=9)
+    macd_df = ta.macd(df['close_smoothed'], fast=12, slow=26, signal=9)
     df = pd.concat([df, macd_df], axis=1)
     macd_cols_to_drop = [col for col in macd_df.columns if 'MACDh' in col or 'MACDs' in col]
     df = df.drop(columns=macd_cols_to_drop)
 
-    df['volatility_20']   = df['close'].pct_change().rolling(window=20).std()
-    df['close_lag1']      = df['close'].shift(1)
-    df['close_lag2']      = df['close'].shift(2)
-    df['close_lag3']      = df['close'].shift(3)
+    df['volatility_20']   = df['close_smoothed'].pct_change().rolling(window=20).std()
+    df['close_lag1']      = df['close_smoothed'].shift(1)
+    df['close_lag2']      = df['close_smoothed'].shift(2)
+    df['close_lag3']      = df['close_smoothed'].shift(3)
     df['open_lag1']       = df['open'].shift(1)
     df['open_lag2']       = df['open'].shift(2)
     df['volume_change']   = df['volume'].pct_change()
     df['intraday_return'] = (df['close'] - df['open']) / df['open']
     
-    # Tinh toan Bollinger Bands (20, 2) va đặt tên cột tường minh
-    bb_df = ta.bbands(df['close'], length=20, std=2)
+    # Tinh toan Bollinger Bands (20, 2) va đặt tên cột tường minh trên giá mịn
+    bb_df = ta.bbands(df['close_smoothed'], length=20, std=2)
     df['bb_lower'] = bb_df.iloc[:, 0]
     df['bb_middle'] = bb_df.iloc[:, 1]
     df['bb_upper'] = bb_df.iloc[:, 2]
 
     # Tinh toan ATR (14)
-    df['atr_14'] = ta.atr(df['high'], df['low'], df['close'], length=14)
+    df['atr_14'] = ta.atr(df['high'], df['low'], df['close_smoothed'], length=14)
 
-    # Tinh toan bo sung EMA (14), ROC (10), ADX (14)
-    df['ema_14'] = ta.ema(df['close'], length=14)
-    df['roc_10'] = ta.roc(df['close'], length=10)
-    adx_df = ta.adx(df['high'], df['low'], df['close'], length=14)
+    # Tinh toan bo sung EMA (14), ROC (10), ADX (14) trên giá mịn
+    df['ema_14'] = ta.ema(df['close_smoothed'], length=14)
+    df['roc_10'] = ta.roc(df['close_smoothed'], length=10)
+    adx_df = ta.adx(df['high'], df['low'], df['close_smoothed'], length=14)
     df['adx_14'] = adx_df.iloc[:, 0]
 
     # Tích hợp đặc trưng phân tích cảm xúc tin tức tài chính

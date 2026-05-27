@@ -20,6 +20,8 @@ sys.path.append(ROOT_DIR)
 from src.web.backend.db import get_db, Stock, StockPrice, NewsSentiment, PredictionRecord, init_db
 from src.ai_models import PositionalEmbedding
 from src.data_loader import format_vn, get_realtime_usd_vnd_rate
+from src.features import DataTransformer
+
 
 app = FastAPI(title="Stock Prediction API", version="1.0.0")
 
@@ -32,14 +34,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Feature columns used by the models (23 features)
-FEATURE_COLS = [
-    "close", "close_lag1", "volume_change", "intraday_return", "volatility_20", 
-    "rsi_14", "macd_12_26_9", "bb_lower", "bb_middle", "bb_upper", 
-    "atr_14", "ema_14", "roc_10", "adx_14", "market_return", "vix_close", 
-    "sentiment_score", "news_volume", "close_lag2", "close_lag3", 
-    "open_lag1", "open_lag2", "rsi_lag1"
-]
+# Feature columns used by the models (22 stationary features)
+FEATURE_COLS = DataTransformer().feature_cols
+
 LOOKBACK_WINDOW = 45
 
 # Root helper to check status
@@ -211,6 +208,26 @@ def trigger_prediction(ticker: str, db: Session = Depends(get_db)):
             raw_df = pd.merge(raw_df, vix_df, left_on='date', right_index=True, how='left')
         except Exception:
             raw_df['vix_close'] = 20.0
+
+        try:
+            tnx_df = yf.download("^TNX", period="150d", progress=False)
+            if isinstance(tnx_df.columns, pd.MultiIndex):
+                tnx_df.columns = tnx_df.columns.droplevel(1)
+            tnx_df.columns = [col.lower() for col in tnx_df.columns]
+            tnx_df = tnx_df[['close']].rename(columns={'close': 'bond_yield_10y'})
+            raw_df = pd.merge(raw_df, tnx_df, left_on='date', right_index=True, how='left')
+        except Exception:
+            raw_df['bond_yield_10y'] = 4.0
+
+        try:
+            dxy_df = yf.download("DX-Y.NYB", period="150d", progress=False)
+            if isinstance(dxy_df.columns, pd.MultiIndex):
+                dxy_df.columns = dxy_df.columns.droplevel(1)
+            dxy_df.columns = [col.lower() for col in dxy_df.columns]
+            dxy_df['dollar_index_change'] = dxy_df['close'].pct_change()
+            raw_df = pd.merge(raw_df, dxy_df[['dollar_index_change']], left_on='date', right_index=True, how='left')
+        except Exception:
+            raw_df['dollar_index_change'] = 0.0
             
         # Merge news sentiment features
         try:
@@ -226,12 +243,21 @@ def trigger_prediction(ticker: str, db: Session = Depends(get_db)):
         raw_df['news_volume'] = raw_df['news_volume'].fillna(0.0)
         raw_df['market_return'] = raw_df['market_return'].fillna(0.0)
         raw_df['vix_close'] = raw_df['vix_close'].fillna(20.0)
+        raw_df['bond_yield_10y'] = raw_df['bond_yield_10y'].fillna(4.0)
+        raw_df['dollar_index_change'] = raw_df['dollar_index_change'].fillna(0.0)
         
-        # Calculate indicators
+        # Apply Kalman Filter to smooth price
+        try:
+            from src.features import kalman_filter
+        except ImportError:
+            from features import kalman_filter
+        raw_df['close_smoothed'] = kalman_filter(raw_df['close'])
+        
+        # Calculate indicators on close_smoothed
         raw_df.set_index('date', inplace=True)
-        raw_df['rsi_14'] = ta.rsi(raw_df['close'], length=14)
+        raw_df['rsi_14'] = ta.rsi(raw_df['close_smoothed'], length=14)
         raw_df['rsi_lag1'] = raw_df['rsi_14'].shift(1)
-        macd_df = ta.macd(raw_df['close'], fast=12, slow=26, signal=9)
+        macd_df = ta.macd(raw_df['close_smoothed'], fast=12, slow=26, signal=9)
         raw_df = pd.concat([raw_df, macd_df], axis=1)
         
         macd_cols_to_drop = [col for col in macd_df.columns if 'MACDh' in col or 'MACDs' in col]
@@ -239,33 +265,32 @@ def trigger_prediction(ticker: str, db: Session = Depends(get_db)):
         macd_col_name = [col for col in raw_df.columns if 'MACD_12_26_9' in col or 'macd' in col.lower()][0]
         raw_df.rename(columns={macd_col_name: 'macd_12_26_9'}, inplace=True)
         
-        raw_df['volatility_20'] = raw_df['close'].pct_change().rolling(window=20).std()
-        raw_df['close_lag1'] = raw_df['close'].shift(1)
-        raw_df['close_lag2'] = raw_df['close'].shift(2)
-        raw_df['close_lag3'] = raw_df['close'].shift(3)
+        raw_df['volatility_20'] = raw_df['close_smoothed'].pct_change().rolling(window=20).std()
+        raw_df['close_lag1'] = raw_df['close_smoothed'].shift(1)
+        raw_df['close_lag2'] = raw_df['close_smoothed'].shift(2)
+        raw_df['close_lag3'] = raw_df['close_smoothed'].shift(3)
         raw_df['open_lag1'] = raw_df['open'].shift(1)
         raw_df['open_lag2'] = raw_df['open'].shift(2)
         raw_df['volume_change'] = raw_df['volume'].pct_change()
         raw_df['intraday_return'] = (raw_df['close'] - raw_df['open']) / raw_df['open']
         
-        bb_df = ta.bbands(raw_df['close'], length=20, std=2)
+        bb_df = ta.bbands(raw_df['close_smoothed'], length=20, std=2)
         raw_df['bb_lower'] = bb_df.iloc[:, 0]
         raw_df['bb_middle'] = bb_df.iloc[:, 1]
         raw_df['bb_upper'] = bb_df.iloc[:, 2]
-        raw_df['atr_14'] = ta.atr(raw_df['high'], raw_df['low'], raw_df['close'], length=14)
-        raw_df['ema_14'] = ta.ema(raw_df['close'], length=14)
-        raw_df['roc_10'] = ta.roc(raw_df['close'], length=10)
+        raw_df['atr_14'] = ta.atr(raw_df['high'], raw_df['low'], raw_df['close_smoothed'], length=14)
+        raw_df['ema_14'] = ta.ema(raw_df['close_smoothed'], length=14)
+        raw_df['roc_10'] = ta.roc(raw_df['close_smoothed'], length=10)
         
-        adx_raw = ta.adx(raw_df['high'], raw_df['low'], raw_df['close'], length=14)
+        adx_raw = ta.adx(raw_df['high'], raw_df['low'], raw_df['close_smoothed'], length=14)
         raw_df['adx_14'] = adx_raw.iloc[:, 0]
         
-        # Clean null values
-        for col in FEATURE_COLS:
-            if col not in raw_df.columns:
-                raw_df[col] = 0.0
-            raw_df[col] = raw_df[col].ffill().bfill().fillna(0.0)
-            
-        recent_features = raw_df[FEATURE_COLS].tail(LOOKBACK_WINDOW)
+        # Clean null values and calculate stationary ratios using DataTransformer
+        transformer = DataTransformer(time_steps=LOOKBACK_WINDOW)
+        raw_df_reset = raw_df.reset_index()
+        raw_df_transformed = transformer.transform_df(raw_df_reset)
+        
+        recent_features = raw_df_transformed.tail(LOOKBACK_WINDOW)
         if len(recent_features) < LOOKBACK_WINDOW:
             raise HTTPException(status_code=500, detail=f"Không đủ dữ liệu {LOOKBACK_WINDOW} ngày để tạo đặc trưng")
             
@@ -273,18 +298,30 @@ def trigger_prediction(ticker: str, db: Session = Depends(get_db)):
         recent_scaled = scaler_X.transform(recent_features.values)
         X_predict = recent_scaled.reshape(1, LOOKBACK_WINDOW, len(FEATURE_COLS))
         
-        xgb_pred_scaled = xgb_model.predict(X_predict.reshape(1, -1)).reshape(-1, 1)
+        # Trích xuất đặc trưng lai (32 chiều ẩn từ Transformer + 22 chiều chỉ báo ngày hiện tại) cho mô hình Hybrid XGBoost
+        feature_extractor = tf.keras.models.Model(
+            inputs=transformer_model.input,
+            outputs=transformer_model.layers[-2].output
+        )
+        X_predict_latent = feature_extractor.predict(X_predict, verbose=0)
+        X_predict_today = X_predict[0, -1, :].reshape(1, -1)
+        X_predict_hybrid = np.concatenate([X_predict_latent, X_predict_today], axis=1)
+
+        
+        xgb_pred_scaled = xgb_model.predict(X_predict_hybrid).reshape(-1, 1)
         xgb_return_future = scaler_y.inverse_transform(xgb_pred_scaled)[0][0]
         
         trans_pred_scaled = transformer_model.predict(X_predict, verbose=0)
         trans_return_future = scaler_y.inverse_transform(trans_pred_scaled)[0][0]
+
         
-        last_close = float(recent_features['close'].iloc[-1])
-        last_date_str = recent_features.index[-1].strftime('%Y-%m-%d')
-        target_date_str = (recent_features.index[-1] + datetime.timedelta(days=1)).strftime('%Y-%m-%d')
+        last_close = float(raw_df['close'].iloc[-1])
+        last_date_str = raw_df.index[-1].strftime('%Y-%m-%d')
+        target_date_str = (raw_df.index[-1] + datetime.timedelta(days=1)).strftime('%Y-%m-%d')
+
         
-        xgb_val = last_close * (1 + xgb_return_future)
-        trans_val = last_close * (1 + trans_return_future)
+        xgb_val = float(last_close * (1 + xgb_return_future))
+        trans_val = float(last_close * (1 + trans_return_future))
         
         last_atr = float(raw_df['atr_14'].iloc[-1])
         risk_ratio = (last_atr / last_close) * 100
@@ -295,10 +332,11 @@ def trigger_prediction(ticker: str, db: Session = Depends(get_db)):
         else:
             risk_level = "Cao 🔴"
             
-        xgb_lower = xgb_val - 1.5 * last_atr
-        xgb_upper = xgb_val + 1.5 * last_atr
-        trans_lower = trans_val - 1.5 * last_atr
-        trans_upper = trans_val + 1.5 * last_atr
+        xgb_lower = float(xgb_val - 1.5 * last_atr)
+        xgb_upper = float(xgb_val + 1.5 * last_atr)
+        trans_lower = float(trans_val - 1.5 * last_atr)
+        trans_upper = float(trans_val + 1.5 * last_atr)
+
         
         # Save historical price record to database
         db_price = db.query(StockPrice).filter(StockPrice.stock_id == stock.id, StockPrice.date == last_date_str).first()

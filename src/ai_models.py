@@ -74,18 +74,17 @@ class PositionalEmbedding(tf.keras.layers.Layer):
         })
         return config
 
-def build_transformer(input_shape):
+def build_transformer(input_shape, d_model=128, num_heads=8, dropout_rate=0.3, learning_rate=1e-4):
     """
     Xây dựng kiến trúc mạng Transformer sâu hơn để học tốt hơn trên chuỗi thời gian:
-    - 2 Lớp Multi-Head Attention (8 heads, key_dim=128, dropout=0.3)
+    - 2 Lớp Multi-Head Attention (num_heads, key_dim=d_model, dropout=dropout_rate)
     - Residual Connections & Layer Normalization
     - Feed-Forward Networks cho từng block với L2 regularization
     - Tăng số neuron lớp Dense để khớp dữ liệu phức tạp và chống overfitting
     """
     inputs = Input(shape=input_shape)
     
-    # 1. Conv1D layer to extract local patterns (filters=128, kernel_size=3)
-    d_model = 128
+    # 1. Conv1D layer to extract local patterns
     x = Conv1D(
         filters=d_model, 
         kernel_size=3, 
@@ -100,25 +99,25 @@ def build_transformer(input_shape):
     
     # --- BLOCK 1 ---
     # Multi-Head Attention
-    attn_1 = MultiHeadAttention(key_dim=128, num_heads=8, dropout=0.3)(x, x)
-    attn_1 = Dropout(0.3)(attn_1)
+    attn_1 = MultiHeadAttention(key_dim=d_model, num_heads=num_heads, dropout=dropout_rate)(x, x)
+    attn_1 = Dropout(dropout_rate)(attn_1)
     x = LayerNormalization(epsilon=1e-6)(x + attn_1)  # Residual connection 1
     
     # Feed Forward Network 1
-    ffn_1 = Dense(256, activation="relu", kernel_regularizer=tf.keras.regularizers.l2(1e-4))(x)
-    ffn_1 = Dropout(0.3)(ffn_1)
+    ffn_1 = Dense(2 * d_model, activation="relu", kernel_regularizer=tf.keras.regularizers.l2(1e-4))(x)
+    ffn_1 = Dropout(dropout_rate)(ffn_1)
     ffn_1 = Dense(d_model, kernel_regularizer=tf.keras.regularizers.l2(1e-4))(ffn_1)
     x = LayerNormalization(epsilon=1e-6)(x + ffn_1)  # Residual connection 2
     
     # --- BLOCK 2 ---
     # Multi-Head Attention
-    attn_2 = MultiHeadAttention(key_dim=128, num_heads=8, dropout=0.3)(x, x)
-    attn_2 = Dropout(0.3)(attn_2)
+    attn_2 = MultiHeadAttention(key_dim=d_model, num_heads=num_heads, dropout=dropout_rate)(x, x)
+    attn_2 = Dropout(dropout_rate)(attn_2)
     x = LayerNormalization(epsilon=1e-6)(x + attn_2)  # Residual connection 3
     
     # Feed Forward Network 2
-    ffn_2 = Dense(256, activation="relu", kernel_regularizer=tf.keras.regularizers.l2(1e-4))(x)
-    ffn_2 = Dropout(0.3)(ffn_2)
+    ffn_2 = Dense(2 * d_model, activation="relu", kernel_regularizer=tf.keras.regularizers.l2(1e-4))(x)
+    ffn_2 = Dropout(dropout_rate)(ffn_2)
     ffn_2 = Dense(d_model, kernel_regularizer=tf.keras.regularizers.l2(1e-4))(ffn_2)
     x = LayerNormalization(epsilon=1e-6)(x + ffn_2)  # Residual connection 4
     
@@ -126,19 +125,19 @@ def build_transformer(input_shape):
     x = Flatten()(x)
     
     # 5. Output layers
-    x = Dense(128, activation="relu", kernel_regularizer=tf.keras.regularizers.l2(1e-4))(x)
-    x = Dropout(0.3)(x)
-    x = Dense(64, activation="relu", kernel_regularizer=tf.keras.regularizers.l2(1e-4))(x)
-    x = Dropout(0.3)(x)
+    x = Dense(d_model, activation="relu", kernel_regularizer=tf.keras.regularizers.l2(1e-4))(x)
+    x = Dropout(dropout_rate)(x)
+    x = Dense(d_model // 2, activation="relu", kernel_regularizer=tf.keras.regularizers.l2(1e-4))(x)
+    x = Dropout(dropout_rate)(x)
     x = Dense(32, activation="relu", kernel_regularizer=tf.keras.regularizers.l2(1e-4))(x)
     outputs = Dense(1)(x)
     
     model = Model(inputs, outputs)
     
-    # Use a smaller learning rate to prevent early overfitting on scaled return targets
-    optimizer = tf.keras.optimizers.Adam(learning_rate=1e-4)
+    optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
     model.compile(optimizer=optimizer, loss='huber')
     return model
+
 
 if __name__ == "__main__":
     import sys

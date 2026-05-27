@@ -2,6 +2,23 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 
+def kalman_filter(series: pd.Series, R: float = 0.01, Q: float = 1e-5) -> pd.Series:
+    """
+    Bộ lọc Kalman làm mịn dữ liệu chuỗi thời gian bằng thuật toán cập nhật trạng thái đệ quy.
+    """
+    if len(series) == 0:
+        return series
+    xhat = series.iloc[0]
+    P = 1.0
+    smoothed = []
+    for val in series:
+        P_minus = P + Q
+        K = P_minus / (P_minus + R)
+        xhat = xhat + K * (val - xhat)
+        P = (1.0 - K) * P_minus
+        smoothed.append(xhat)
+    return pd.Series(smoothed, index=series.index)
+
 class DataTransformer:
     def __init__(self, time_steps: int = 30):
         """
@@ -14,24 +31,77 @@ class DataTransformer:
         self.feature_scaler = StandardScaler()
         self.target_scaler = StandardScaler()
         
-        # Định nghĩa các trường dữ liệu đầu vào cho AI
+        # Định nghĩa các trường dữ liệu đầu vào dừng cho AI (24 đặc trưng)
         self.feature_cols = [
-            'close', 'rsi_14', 'MACD_12_26_9', 'volatility_20', 
-            'close_lag1', 'close_lag2', 'close_lag3',
-            'open_lag1', 'open_lag2', 'rsi_lag1',
+            'rsi_14', 'macd_ratio', 'volatility_20', 
+            'close_lag1_ratio', 'close_lag2_ratio', 'close_lag3_ratio',
+            'open_lag1_ratio', 'open_lag2_ratio', 'rsi_lag1',
             'volume_change', 'intraday_return',
-            'bb_lower', 'bb_middle', 'bb_upper', 'atr_14',
-            'ema_14', 'roc_10', 'adx_14', 'market_return', 'vix',
-            'sentiment_score', 'news_volume'
+            'bb_lower_ratio', 'bb_middle_ratio', 'bb_upper_ratio', 'atr_ratio',
+            'ema_14_ratio', 'roc_10', 'adx_14', 'market_return', 'vix',
+            'sentiment_score', 'news_volume', 'bond_yield_10y', 'dollar_index_change'
         ]
-        self.target_col = 'target_return' # Đổi tên cột mục tiêu tại đây
+        self.target_col = 'target_return'
+
+    def transform_df(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Tính toán các đặc trưng tỷ lệ (Stationary Ratios) từ dữ liệu thô.
+        Đảm bảo tính đồng nhất giữa huấn luyện và dự đoán trực tuyến.
+        """
+        df_copy = df.copy()
+        # Chuyển đổi vô cực (inf) thành NaN trước khi tính toán
+        df_copy = df_copy.replace([np.inf, -np.inf], np.nan)
+        
+        # Chuyển đổi các đặc trưng giá tuyệt đối sang dạng tỷ lệ so với close ngày hiện tại
+        df_copy['ema_14_ratio'] = (df_copy['ema_14'] - df_copy['close']) / df_copy['close']
+        df_copy['bb_lower_ratio'] = (df_copy['bb_lower'] - df_copy['close']) / df_copy['close']
+        df_copy['bb_middle_ratio'] = (df_copy['bb_middle'] - df_copy['close']) / df_copy['close']
+        df_copy['bb_upper_ratio'] = (df_copy['bb_upper'] - df_copy['close']) / df_copy['close']
+        df_copy['atr_ratio'] = df_copy['atr_14'] / df_copy['close']
+        
+        # Tương thích cột MACD
+        macd_cols = [c for c in df_copy.columns if 'MACD_12_26_9' in c or 'macd' in c.lower()]
+        if macd_cols:
+            df_copy['macd_ratio'] = df_copy[macd_cols[0]] / df_copy['close']
+        else:
+            df_copy['macd_ratio'] = 0.0
+            
+        df_copy['close_lag1_ratio'] = (df_copy['close_lag1'] - df_copy['close']) / df_copy['close']
+        df_copy['close_lag2_ratio'] = (df_copy['close_lag2'] - df_copy['close']) / df_copy['close']
+        df_copy['close_lag3_ratio'] = (df_copy['close_lag3'] - df_copy['close']) / df_copy['close']
+        df_copy['open_lag1_ratio'] = (df_copy['open_lag1'] - df_copy['close']) / df_copy['close']
+        df_copy['open_lag2_ratio'] = (df_copy['open_lag2'] - df_copy['close']) / df_copy['close']
+        
+        # Tương thích tên chỉ số vix
+        vix_cols = [c for c in df_copy.columns if c.lower() in ['vix', 'vix_close']]
+        if vix_cols:
+            df_copy['vix'] = df_copy[vix_cols[0]]
+        else:
+            df_copy['vix'] = 20.0
+            
+        # Trích xuất và điền khuyết các cột đặc trưng quan tâm
+        df_out = pd.DataFrame(index=df.index)
+        for col in self.feature_cols:
+            if col in df_copy.columns:
+                df_out[col] = df_copy[col]
+            else:
+                df_out[col] = 0.0
+            
+        # Làm sạch vô cực và NaN lần cuối
+        df_out = df_out.replace([np.inf, -np.inf], np.nan)
+        for col in self.feature_cols:
+            df_out[col] = df_out[col].ffill().bfill().fillna(0.0)
+            
+        return df_out[self.feature_cols]
 
     def fit_transform_data(self, df: pd.DataFrame):
         """
         Thực hiện chuẩn hóa dữ liệu sử dụng StandardScaler (mean=0, std=1).
         """
-        # Trích xuất mảng giá trị thô
-        X_raw = df[self.feature_cols].values
+        # Trích xuất đặc trưng dừng
+        df_feats = self.transform_df(df)
+        
+        X_raw = df_feats.values
         y_raw = df[[self.target_col]].values
         
         # Tiến hành học và biến đổi dữ liệu (Scaling)
@@ -39,6 +109,7 @@ class DataTransformer:
         y_scaled = self.target_scaler.fit_transform(y_raw)
         
         return X_scaled, y_scaled
+
 
     def create_sliding_windows(self, X_scaled: np.ndarray, y_scaled: np.ndarray):
         """

@@ -76,3 +76,107 @@ Dự báo XGBoost: 15.921.874,03 VNĐ ($605.53 USD) (📉 GIẢM -0.75%) | Kho�
 Dự báo Transformer: 16.020.204,28 VNĐ ($609.27 USD) (📉 GIẢM -0.14%) | Khoảng an toàn: [15.430.861,09 - 16.609.547,48] VNĐ
 --------------------------------------------------
 
+=== BẢN GHI DỰ BÁO (2026-05-27 18:34:23) ===
+Mã chứng khoán: VNM.VN
+Giá đóng cửa gần nhất (2026-05-27): 58.800,00 VNĐ
+Rủi ro biến động: Trung bình (Biến động nhẹ - Thận trọng) 🟡 (Tỷ lệ: 1.63%)
+Dự báo XGBoost: 58.921,39 VNĐ (📈 TĂNG +0.21%) | Khoảng an toàn: [57.484,17 - 60.358,61] VNĐ
+Dự báo Transformer: 58.867,66 VNĐ (📈 TĂNG +0.12%) | Khoảng an toàn: [57.430,44 - 60.304,89] VNĐ
+--------------------------------------------------
+
+=== BẢN GHI DỰ BÁO (2026-05-27 18:36:43) ===
+Mã chứng khoán: GOOGL
+Giá đóng cửa gần nhất (2026-05-26): 10.236.099,49 VNĐ ($389.29 USD)
+Rủi ro biến động: Trung bình (Biến động nhẹ - Thận trọng) 🟡 (Tỷ lệ: 2.47%)
+Tỷ giá USD/VND quy đổi: 1 USD = 26.294,00 VNĐ
+Dự báo XGBoost: 10.244.671,66 VNĐ ($389.62 USD) (📈 TĂNG +0.08%) | Khoảng an toàn: [9.865.884,93 - 10.623.458,39] VNĐ
+Dự báo Transformer: 10.246.044,43 VNĐ ($389.67 USD) (📈 TĂNG +0.10%) | Khoảng an toàn: [9.867.257,70 - 10.624.831,16] VNĐ
+--------------------------------------------------
+
+=== BẢN GHI DỰ BÁO (2026-05-27 18:38:36) ===
+Mã chứng khoán: META
+Giá đóng cửa gần nhất (2026-05-26): 16.118.014,19 VNĐ ($612.99 USD)
+Rủi ro biến động: Trung bình (Biến động nhẹ - Thận trọng) 🟡 (Tỷ lệ: 2.44%)
+Tỷ giá USD/VND quy đổi: 1 USD = 26.294,00 VNĐ
+Dự báo XGBoost: 15.799.520,10 VNĐ ($600.88 USD) (📉 GIẢM -1.98%) | Khoảng an toàn: [15.210.148,95 - 16.388.891,25] VNĐ
+Dự báo Transformer: 16.124.270,32 VNĐ ($613.23 USD) (📈 TĂNG +0.04%) | Khoảng an toàn: [15.534.899,17 - 16.713.641,47] VNĐ
+--------------------------------------------------
+
+=== BẢN GHI DỰ BÁO (2026-05-27 18:45:27) ===
+Mã chứng khoán: VNM.VN
+Giá đóng cửa gần nhất (2026-05-27): 58.800,00 VNĐ
+Rủi ro biến động: Trung bình (Biến động nhẹ - Thận trọng) 🟡 (Tỷ lệ: 1.63%)
+Dự báo XGBoost: 58.882,59 VNĐ (📈 TĂNG +0.14%) | Khoảng an toàn: [57.445,36 - 60.319,81] VNĐ
+Dự báo Transformer: 58.832,16 VNĐ (📈 TĂNG +0.05%) | Khoảng an toàn: [57.394,94 - 60.269,38] VNĐ
+--------------------------------------------------
+
+=== BẢN GHI DỰ BÁO (2026-05-27 18:48:02) ===
+Mã chứng khoán: GOOGL
+Giá đóng cửa gần nhất (2026-05-26): 10.236.099,49 VNĐ ($389.29 USD)
+Rủi ro biến động: Trung bình (Biến động nhẹ - Thận trọng) 🟡 (Tỷ lệ: 2.47%)
+Tỷ giá USD/VND quy đổi: 1 USD = 26.294,00 VNĐ
+Dự báo XGBoost: 10.218.534,77 VNĐ ($388.63 USD) (📉 GIẢM -0.17%) | Khoảng an toàn: [9.839.748,04 - 10.597.321,50] VNĐ
+Dự báo Transformer: 10.247.688,09 VNĐ ($389.73 USD) (📈 TĂNG +0.11%) | Khoảng an toàn: [9.868.901,36 - 10.626.474,82] VNĐ
+--------------------------------------------------
+
+=== BẢN GHI DỰ BÁO (2026-05-27 18:50:08) ===
+Mã chứng khoán: META
+Giá đóng cửa gần nhất (2026-05-26): 16.118.014,19 VNĐ ($612.99 USD)
+Rủi ro biến động: Trung bình (Biến động nhẹ - Thận trọng) 🟡 (Tỷ lệ: 2.44%)
+Tỷ giá USD/VND quy đổi: 1 USD = 26.294,00 VNĐ
+Dự báo XGBoost: 16.104.297,19 VNĐ ($612.47 USD) (📉 GIẢM -0.09%) | Khoảng an toàn: [15.514.926,04 - 16.693.668,34] VNĐ
+Dự báo Transformer: 16.095.641,21 VNĐ ($612.14 USD) (📉 GIẢM -0.14%) | Khoảng an toàn: [15.506.270,05 - 16.685.012,36] VNĐ
+--------------------------------------------------
+
+=== BẢN GHI DỰ BÁO (2026-05-27 19:47:25) ===
+Mã chứng khoán: VNM.VN
+Giá đóng cửa gần nhất (2026-05-27): 58.800,00 VNĐ
+Rủi ro biến động: Trung bình (Biến động nhẹ - Thận trọng) 🟡 (Tỷ lệ: 1.63%)
+Dự báo XGBoost: 58.899,09 VNĐ (📈 TĂNG +0.17%) | Khoảng an toàn: [57.461,87 - 60.336,32] VNĐ
+Dự báo Transformer: 58.830,59 VNĐ (📈 TĂNG +0.05%) | Khoảng an toàn: [57.393,37 - 60.267,81] VNĐ
+--------------------------------------------------
+
+=== BẢN GHI DỰ BÁO (2026-05-27 19:48:04) ===
+Mã chứng khoán: GOOGL
+Giá đóng cửa gần nhất (2026-05-26): 10.236.099,49 VNĐ ($389.29 USD)
+Rủi ro biến động: Trung bình (Biến động nhẹ - Thận trọng) 🟡 (Tỷ lệ: 2.47%)
+Tỷ giá USD/VND quy đổi: 1 USD = 26.294,00 VNĐ
+Dự báo XGBoost: 10.312.878,09 VNĐ ($392.21 USD) (📈 TĂNG +0.75%) | Khoảng an toàn: [9.934.091,36 - 10.691.664,82] VNĐ
+Dự báo Transformer: 10.313.626,10 VNĐ ($392.24 USD) (📈 TĂNG +0.76%) | Khoảng an toàn: [9.934.839,37 - 10.692.412,83] VNĐ
+--------------------------------------------------
+
+=== BẢN GHI DỰ BÁO (2026-05-27 19:48:39) ===
+Mã chứng khoán: META
+Giá đóng cửa gần nhất (2026-05-26): 16.118.014,19 VNĐ ($612.99 USD)
+Rủi ro biến động: Trung bình (Biến động nhẹ - Thận trọng) 🟡 (Tỷ lệ: 2.44%)
+Tỷ giá USD/VND quy đổi: 1 USD = 26.294,00 VNĐ
+Dự báo XGBoost: 16.119.764,60 VNĐ ($613.06 USD) (📈 TĂNG +0.01%) | Khoảng an toàn: [15.530.393,44 - 16.709.135,75] VNĐ
+Dự báo Transformer: 16.156.577,03 VNĐ ($614.46 USD) (📈 TĂNG +0.24%) | Khoảng an toàn: [15.567.205,87 - 16.745.948,18] VNĐ
+--------------------------------------------------
+
+=== BẢN GHI DỰ BÁO (2026-05-27 20:53:59) ===
+Mã chứng khoán: VNM.VN
+Giá đóng cửa gần nhất (2026-05-27): 58.800,00 VNĐ
+Rủi ro biến động: Cao (Nguy hiểm - Biến động cực mạnh / Có Drama hoặc Tin tức lớn) 🔴 [CẢNH BÁO: HẠN CHẾ ĐẶT LỆNH KHỚP NGAY] (Tỷ lệ: 4.73%)
+Dự báo XGBoost: 58.854,09 VNĐ (📈 TĂNG +0.09%) | Khoảng an toàn: [54.680,65 - 63.027,53] VNĐ
+Dự báo Transformer: 58.828,53 VNĐ (📈 TĂNG +0.05%) | Khoảng an toàn: [54.655,09 - 63.001,97] VNĐ
+--------------------------------------------------
+
+=== BẢN GHI DỰ BÁO (2026-05-27 20:54:48) ===
+Mã chứng khoán: GOOGL
+Giá đóng cửa gần nhất (2026-05-27): 10.219.934,01 VNĐ ($388.99 USD)
+Rủi ro biến động: Cao (Nguy hiểm - Biến động cực mạnh / Có Drama hoặc Tin tức lớn) 🔴 [CẢNH BÁO: HẠN CHẾ ĐẶT LỆNH KHỚP NGAY] (Tỷ lệ: 12.67%)
+Tỷ giá USD/VND quy đổi: 1 USD = 26.273,00 VNĐ
+Dự báo XGBoost: 9.959.661,95 VNĐ ($379.08 USD) (📉 GIẢM -2.55%) | Khoảng an toàn: [8.016.750,71 - 11.902.573,20] VNĐ
+Dự báo Transformer: 10.236.934,33 VNĐ ($389.64 USD) (📈 TĂNG +0.17%) | Khoảng an toàn: [8.294.023,08 - 12.179.845,57] VNĐ
+--------------------------------------------------
+
+=== BẢN GHI DỰ BÁO (2026-05-27 20:55:30) ===
+Mã chứng khoán: META
+Giá đóng cửa gần nhất (2026-05-27): 16.024.164,72 VNĐ ($609.91 USD)
+Rủi ro biến động: Cao (Nguy hiểm - Biến động cực mạnh / Có Drama hoặc Tin tức lớn) 🔴 [CẢNH BÁO: HẠN CHẾ ĐẶT LỆNH KHỚP NGAY] (Tỷ lệ: 5.14%)
+Tỷ giá USD/VND quy đổi: 1 USD = 26.273,00 VNĐ
+Dự báo XGBoost: 15.862.721,70 VNĐ ($603.77 USD) (📉 GIẢM -1.01%) | Khoảng an toàn: [14.628.328,62 - 17.097.114,78] VNĐ
+Dự báo Transformer: 16.035.990,95 VNĐ ($610.36 USD) (📈 TĂNG +0.07%) | Khoảng an toàn: [14.801.597,87 - 17.270.384,03] VNĐ
+--------------------------------------------------
+
