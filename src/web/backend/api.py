@@ -369,5 +369,15 @@ def trigger_prediction(ticker: str, db: Session = Depends(get_db)):
 
 # Mount static frontend files
 STATIC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend"))
+
+from fastapi.responses import FileResponse
+
+@app.get("/")
+def read_index():
+    index_path = os.path.join(STATIC_DIR, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    raise HTTPException(status_code=404, detail="index.html not found")
+
 if os.path.exists(STATIC_DIR):
-    app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="web")
+    app.mount("/", StaticFiles(directory=STATIC_DIR), name="web")
