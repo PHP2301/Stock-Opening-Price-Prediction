@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Stock Predictor - Yahoo Finance Dashboard</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- CSS Stylesheet -->
+    <link rel="stylesheet" href="style.css">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <!-- Top Header Navigation -->
+    <header class="header">
+        <div class="header-logo">
+            <i class="fa-solid fa-chart-line logo-icon"></i>
+            <span class="logo-text">Yahoo<span class="logo-sub">Finance</span><span class="logo-badge">AI Predictor</span></span>
+        </div>
+        <div class="header-metrics">
+            <div class="metric-item" id="usd-rate-container">
+                <span class="metric-label"><i class="fa-solid fa-dollar-sign"></i> USD/VND:</span>
+                <span class="metric-value" id="usd-vnd-rate">26.294,00 VNĐ</span>
+            </div>
+            <div class="metric-item">
+                <span class="status-dot green"></span>
+                <span class="status-text">Server Online</span>
+            </div>
+        </div>
+    </header>
+
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <h3 class="section-title"><i class="fa-solid fa-list-ul"></i> Watchlist</h3>
+            <div class="ticker-list" id="ticker-list">
+                <!-- Tickers will be dynamically rendered here -->
+                <div class="ticker-item loading">Đang tải watchlist...</div>
+            </div>
+            
+            <div class="sidebar-info">
+                <h4><i class="fa-solid fa-circle-info"></i> Về Hệ Thống AI</h4>
+                <p>Hệ thống kết hợp <strong>XGBoost</strong> tối ưu hóa GridSearch và mô hình mạng <strong>Transformer Encoder</strong> sâu trích xuất đặc trưng chuỗi thời gian 45 phiên.</p>
+            </div>
+        </aside>
+
+        <!-- Main Dashboard Dashboard Content -->
+        <main class="dashboard">
+            <!-- Header Section of Selected Stock -->
+            <section class="stock-header card">
+                <div class="stock-header-main">
+                    <div>
+                        <h1 class="stock-title" id="selected-stock-title">Đang tải...</h1>
+                        <p class="stock-exchange" id="selected-stock-exchange">---</p>
+                    </div>
+                    <div class="stock-price-block">
+                        <span class="stock-price" id="selected-stock-price">0 VNĐ</span>
+                        <span class="stock-change" id="selected-stock-change">--%</span>
+                    </div>
+                </div>
+                <div class="stock-badges">
+                    <div class="badge-item">
+                        <span class="badge-label">Rủi ro biến động</span>
+                        <span class="badge-val" id="selected-stock-risk">---</span>
+                    </div>
+                    <div class="badge-item">
+                        <span class="badge-label">Giá đóng cửa (Gần nhất)</span>
+                        <span class="badge-val" id="selected-stock-date">--/--/----</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Chart Section -->
+            <section class="chart-section card">
+                <div class="card-header">
+                    <h2 class="card-title"><i class="fa-solid fa-chart-area"></i> Biểu đồ giá & Dự báo mở cửa</h2>
+                    <div class="chart-legend-custom">
+                        <span class="legend-dot raw"></span> Giá thực tế
+                        <span class="legend-dot xgb"></span> Dự đoán XGBoost
+                        <span class="legend-dot trans"></span> Dự đoán Transformer
+                    </div>
+                </div>
+                <div class="chart-canvas-container">
+                    <canvas id="priceChart"></canvas>
+                </div>
+            </section>
+
+            <!-- AI Predictions Comparison Cards -->
+            <section class="grid-two-cols">
+                <!-- Predictions Card -->
+                <div class="predictions-card card">
+                    <div class="card-header border-bottom">
+                        <h2 class="card-title"><i class="fa-solid fa-robot"></i> Kết quả dự đoán phiên kế tiếp</h2>
+                        <button class="btn btn-primary" id="btn-trigger-predict">
+                            <i class="fa-solid fa-arrows-rotate"></i> Kích hoạt Dự báo Online
+                        </button>
+                    </div>
+                    
+                    <div class="predict-model-row">
+                        <!-- XGBoost prediction -->
+                        <div class="model-predict-box">
+                            <div class="model-header">
+                                <span class="model-name"><i class="fa-solid fa-tree"></i> XGBoost</span>
+                                <span class="trend-indicator" id="xgb-trend">--</span>
+                            </div>
+                            <div class="model-price" id="xgb-price">0 VNĐ</div>
+                            <div class="model-usd" id="xgb-price-usd">$0.00 USD</div>
+                            <div class="model-range">
+                                <span class="range-label">Khoảng an toàn:</span>
+                                <span class="range-val" id="xgb-range">[0 - 0] VNĐ</span>
+                            </div>
+                        </div>
+
+                        <!-- Transformer prediction -->
+                        <div class="model-predict-box">
+                            <div class="model-header">
+                                <span class="model-name"><i class="fa-solid fa-brain"></i> Transformer</span>
+                                <span class="trend-indicator" id="trans-trend">--</span>
+                            </div>
+                            <div class="model-price" id="trans-price">0 VNĐ</div>
+                            <div class="model-usd" id="trans-price-usd">$0.00 USD</div>
+                            <div class="model-range">
+                                <span class="range-label">Khoảng an toàn:</span>
+                                <span class="range-val" id="trans-range">[0 - 0] VNĐ</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="prediction-meta">
+                        <i class="fa-regular fa-clock"></i> Ngày dự đoán: <span id="pred-date">--</span> | Ngày áp dụng: <span id="target-date">--</span>
+                    </div>
+                </div>
+
+                <!-- Sentiment & News Card -->
+                <div class="news-card card">
+                    <div class="card-header border-bottom">
+                        <h2 class="card-title"><i class="fa-solid fa-newspaper"></i> Phân tích cảm xúc tin tức gần đây</h2>
+                    </div>
+                    <div class="news-list" id="news-list">
+                        <!-- News items will be loaded dynamically -->
+                        <div class="news-empty">Không có tin tức gần đây.</div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Prediction Loading Overlay -->
+    <div class="overlay" id="loading-overlay">
+        <div class="loader-box">
+            <div class="spinner"></div>
+            <h3>Hệ thống đang xử lý dự đoán trực tuyến...</h3>
+            <p>Đang tải dữ liệu yfinance, tính toán 23 đặc trưng (lag features, chỉ số kỹ thuật) và chạy dự báo qua mô hình AI.</p>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

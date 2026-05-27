@@ -11,3 +11,6 @@ deep-translator
 nltk
 transformers
 torch
+sqlalchemy
+fastapi
+uvicorn
