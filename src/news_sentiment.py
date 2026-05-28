@@ -1,13 +1,24 @@
 import os
+import sys
+import re
+import urllib.request
+import urllib.parse
+import xml.etree.ElementTree as ET
+from datetime import datetime
 import pandas as pd
 import numpy as np
 import yfinance as yf
-from datetime import datetime
-import urllib.request
-import xml.etree.ElementTree as ET
+from bs4 import BeautifulSoup
 from deep_translator import GoogleTranslator
 import nltk
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
+
+# Đảm bảo in tiếng Việt không bị lỗi trên Windows console
+try:
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8')
+except Exception:
+    pass
 
 # Đảm bảo VADER lexicon đã được tải về máy
 try:
@@ -91,14 +102,94 @@ def fetch_latest_news(ticker):
     except Exception as e:
         print(f"  [NEWS] Không thể tải tin tức yfinance cho {ticker}: {e}")
 
-    # 2. Nếu là mã Việt Nam (VNM.VN), tải thêm các tin tiếng Việt qua RSS CafeF & dịch tự động
-    if "VNM" in ticker.upper():
-        rss_urls = [
-            "https://cafef.vn/thi-truong-chung-khoan.rss",
-            "https://cafef.vn/doanh-nghiep.rss"
-        ]
+    # 2. Tải thêm các tin tiếng Việt qua tìm kiếm và RSS CafeF & dịch tự động
+    ticker_upper = ticker.upper()
+    keywords = []
+    if "VNM" in ticker_upper:
+        keywords = ["VNM", "Vinamilk"]
+    elif "GOOGL" in ticker_upper:
+        keywords = ["GOOGL", "Google", "Alphabet"]
+    elif "META" in ticker_upper:
+        keywords = ["META", "Facebook"]
+
+    if keywords:
         try:
             translator = GoogleTranslator(source='vi', target='en')
+            seen_urls = set()
+            vi_titles = []
+            dates = []
+
+            # A. Quét tin từ tìm kiếm CafeF cho các từ khóa quan trọng liên quan đến cổ phiếu mục tiêu
+            for kw in keywords:
+                try:
+                    encoded_kw = urllib.parse.quote(kw)
+                    search_url = f"https://cafef.vn/tim-kiem.chn?keywords={encoded_kw}"
+                    req = urllib.request.Request(search_url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'})
+                    with urllib.request.urlopen(req, timeout=5) as response:
+                        html = response.read()
+                    
+                    soup = BeautifulSoup(html, 'html.parser')
+                    
+                    # Tìm tất cả thẻ li
+                    for li in soup.find_all('li'):
+                        a_tag = li.find('a')
+                        if a_tag:
+                            title_vi = a_tag.text.strip()
+                            href = a_tag.get('href', '')
+                            if not href.startswith('http'):
+                                href = "https://cafef.vn" + href
+                                
+                            if href in seen_urls:
+                                continue
+                                
+                            # Phân tích ngày từ URL bài viết của CafeF (...-188260501001208871.chn)
+                            match = re.search(r'\d{3}(\d{2})(\d{2})(\d{2})\d+\.chn', href)
+                            if match:
+                                year = "20" + match.group(1)
+                                month = match.group(2)
+                                day = match.group(3)
+                                date_str = f"{year}-{month}-{day}"
+                                
+                                desc_p = li.find('p')
+                                desc = desc_p.text.strip() if desc_p else ""
+                                if title_vi and len(title_vi) > 10:
+                                    vi_titles.append(title_vi)
+                                    dates.append(date_str)
+                                    seen_urls.add(href)
+                                    
+                    # Tìm tất cả thẻ div có class chứa tin
+                    for div in soup.find_all('div', class_=re.compile('item|row|list|box')):
+                        a_tag = div.find('a')
+                        if a_tag:
+                            title_vi = a_tag.text.strip()
+                            href = a_tag.get('href', '')
+                            if not href.startswith('http'):
+                                href = "https://cafef.vn" + href
+                                
+                            if href in seen_urls:
+                                continue
+                                
+                            match = re.search(r'\d{3}(\d{2})(\d{2})(\d{2})\d+\.chn', href)
+                            if match:
+                                year = "20" + match.group(1)
+                                month = match.group(2)
+                                day = match.group(3)
+                                date_str = f"{year}-{month}-{day}"
+                                
+                                desc_p = div.find('p')
+                                desc = desc_p.text.strip() if desc_p else ""
+                                if title_vi and len(title_vi) > 10:
+                                    vi_titles.append(title_vi)
+                                    dates.append(date_str)
+                                    seen_urls.add(href)
+                except Exception as e:
+                    print(f"  [NEWS] Lỗi quét tin tìm kiếm CafeF cho '{kw}': {e}")
+            
+            # B. Quét thêm tin từ RSS chung làm dự phòng (chỉ lọc tin có liên quan đến các từ khóa mục tiêu)
+            rss_urls = [
+                "https://cafef.vn/thi-truong-chung-khoan.rss",
+                "https://cafef.vn/doanh-nghiep.rss"
+            ]
             for url in rss_urls:
                 try:
                     req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
@@ -106,44 +197,55 @@ def fetch_latest_news(ticker):
                         xml_data = response.read()
                     root = ET.fromstring(xml_data)
                     
-                    items = root.findall('.//item')[:10] # Lấy tối đa 10 tin mới nhất để tối ưu tốc độ
-                    vi_titles = []
-                    dates = []
-                    
+                    items = root.findall('.//item')[:10]
                     for item in items:
                         title_vi = item.find('title').text
                         pub_date_str = item.find('pubDate').text
+                        link_tag = item.find('link')
+                        href = link_tag.text.strip() if link_tag is not None else ""
+                        
+                        if href and href in seen_urls:
+                            continue
+                            
                         if title_vi and pub_date_str:
+                            # Chỉ lấy tin liên quan đến các từ khóa mục tiêu của cổ phiếu này
+                            title_lower = title_vi.lower()
+                            if not any(kw.lower() in title_lower for kw in keywords):
+                                continue
+                                
                             parts = pub_date_str.split(' ')
                             if len(parts) >= 4:
                                 day = parts[1]
                                 month_str = parts[2]
                                 year = parts[3]
+                                if len(year) == 2:
+                                    year = "20" + year
                                 months = {'Jan':'01','Feb':'02','Mar':'03','Apr':'04','May':'05','Jun':'06',
                                           'Jul':'07','Aug':'08','Sep':'09','Oct':'10','Nov':'11','Dec':'12'}
                                 month = months.get(month_str[:3], '01')
                                 date_str = f"{year}-{month}-{day.zfill(2)}"
                                 vi_titles.append(title_vi)
                                 dates.append(date_str)
-                    
-                    if vi_titles:
-                        # Dịch cả lô tiêu đề trong 1 request duy nhất
-                        try:
-                            en_titles = translator.translate_batch(vi_titles)
-                            for date_str, title_en in zip(dates, en_titles):
-                                news_list.append({
-                                    'date': date_str,
-                                    'title': f"[VN] {title_en}"
-                                })
-                        except Exception as e:
-                            # Fallback nếu dịch theo lô bị lỗi
-                            for date_str, title_vi in zip(dates, vi_titles):
-                                news_list.append({
-                                    'date': date_str,
-                                    'title': f"[VN-Raw] {title_vi}"
-                                })
+                                if href:
+                                    seen_urls.add(href)
                 except Exception as e:
                     pass
+
+            # C. Dịch toàn bộ tin tiếng Việt thu thập được
+            if vi_titles:
+                try:
+                    en_titles = translator.translate_batch(vi_titles)
+                    for date_str, title_en in zip(dates, en_titles):
+                        news_list.append({
+                            'date': date_str,
+                            'title': f"[VN] {title_en}"
+                        })
+                except Exception as e:
+                    for date_str, title_vi in zip(dates, vi_titles):
+                        news_list.append({
+                            'date': date_str,
+                            'title': f"[VN-Raw] {title_vi}"
+                        })
         except Exception as e:
             print(f"  [NEWS] Không thể dịch tin tức Việt Nam: {e}")
             

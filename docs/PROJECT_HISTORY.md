@@ -28,7 +28,7 @@ Tài liệu này ghi lại toàn bộ lộ trình phát triển, các khó khăn
 ### 🟢 Ngày 4: Chuyển Đổi Chiến Lược & Loại Bỏ LSTM/Ensemble
 *   **Mục tiêu:** Tối ưu hóa sâu theo chỉ đạo của người dùng: loại bỏ hoàn toàn LSTM và Ensemble, chỉ giữ lại XGBoost và Transformer, đồng thời chuyển sang huấn luyện độc lập cho từng mã (Individual Training) để tăng độ chính xác.
 *   **Công việc đã làm:**
-    *   Cấu hình tham số `INDIVIDUAL_TRAINING = True` trong `main.py` để chạy vòng lặp huấn luyện riêng biệt cho từng mã cổ phiếu.
+    *   Cấu hình tham số `INDIVIDUAL_TRAINING = True` trong `scripts/run_pipeline.py` để chạy vòng lặp huấn luyện riêng biệt cho từng mã cổ phiếu.
     *   Loại bỏ hoàn toàn kiến trúc LSTM và khối Ensemble khỏi luồng xử lý, đánh giá và cấu trúc file nguồn `src/ai_models.py`.
     *   Phát hiện nguyên nhân Transformer có kết quả kém hơn: lượng dữ liệu huấn luyện quá ít (dữ liệu Vinamilk trường thực tế chỉ có từ tháng 9/2019 đến nay, khoảng ~1.600 phiên).
 
@@ -50,6 +50,13 @@ Tài liệu này ghi lại toàn bộ lộ trình phát triển, các khó khăn
     *   **Hạ tốc độ học Cosine Decay:** Thay thế `ReduceLROnPlateau` bằng callback `LearningRateScheduler` suy giảm Cosine giúp mạng Neural hội tụ tối ưu hơn.
     *   **Hệ thống hóa tài liệu kiến trúc:** Tạo folder mới và viết file `docs/explain/system_overview.md` để giải thích cặn kẽ nguyên lý hoạt động của toàn bộ hệ thống từ đầu đến cuối cho người dùng.
 
+### 🟤 Ngày 7 (29/05/2026): Lọc Tin Tức Theo Mã Cổ Phiếu & Tích Hợp Cơ Sở Dữ Liệu
+*   **Mục tiêu:** Khử hoàn toàn tin tức ngoài luồng (như MCM) và lưu trữ tin tức vào DB để hiển thị lên bảng tin Web App.
+*   **Công việc đã làm:**
+    *   **Phân rã từ khóa động**: Lập cấu hình từ khóa riêng cho VNM.VN (`VNM`, `Vinamilk`), GOOGL (`Google`, `Alphabet`), và META (`Facebook`) để lọc chính xác tin tức liên quan.
+    *   **Tích hợp SQLite DB cho News**: Sửa đổi `src/web/backend/api.py` để tự động phân tích điểm cảm xúc và lưu trữ từng bài viết vào bảng `news_sentiments` khi kích hoạt dự báo.
+    *   **Làm sạch bộ nhớ đệm (Cache)**: Sửa lỗi hiển thị năm 2 chữ số trong Cache và tái tạo lại các cache file sạch cho VNM.VN và META.
+
 ---
 
 ## 🏆 KẾT QUẢ ĐẠT ĐƯỢC SAU NÂNG CẤP
@@ -70,7 +77,7 @@ Nhờ các cải tiến trên, sai số dự báo trung bình tuyệt đối (MA
 
 ## 📂 DANH SÁCH CÁC FILE CHÍNH TRONG HỆ THỐNG
 
-*   `main.py`: Điểm kích hoạt toàn bộ luồng tải dữ liệu, chuẩn hóa, huấn luyện độc lập cho từng mã, vẽ biểu đồ so sánh kết quả và đưa ra dự báo cho phiên tiếp theo.
+*   `scripts/run_pipeline.py`: Điểm kích hoạt toàn bộ luồng tải dữ liệu, chuẩn hóa, huấn luyện độc lập cho từng mã, vẽ biểu đồ so sánh kết quả và đưa ra dự báo cho phiên tiếp theo.
 *   `src/data_loader.py`: Tải dữ liệu từ Yahoo Finance & DNSE API, đồng nhất tiền tệ, xử lý khuyết thiếu, và tính toán các đặc trưng chỉ báo kỹ thuật.
 *   `src/features.py`: Lớp `DataTransformer` phụ trách việc co giãn dữ liệu (MinMaxScaler) và tạo cửa sổ trượt 3D cho các mô hình.
 *   `src/ai_models.py`: Định nghĩa kiến trúc mạng Transformer chuyên sâu và luồng GridSearchCV tối ưu XGBoost (hoàn toàn không còn LSTM).

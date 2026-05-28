@@ -2,8 +2,8 @@ import os
 from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 
-# Data directory relative to src/web/backend is root/data (up three levels)
-DB_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "data"))
+# Data directory relative to src/web/backend is root/data/processed (up three levels + processed)
+DB_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "processed"))
 os.makedirs(DB_DIR, exist_ok=True)
 DATABASE_URL = f"sqlite:///{os.path.join(DB_DIR, 'stock_predictions.db')}"
 

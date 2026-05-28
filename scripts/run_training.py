@@ -20,7 +20,7 @@ import yfinance as yf
 import pandas_ta as ta
 
 # Cấu hình absolute root path để có thể chạy script từ bất kỳ đâu
-ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(ROOT_DIR)
 
 # ==========================================
@@ -66,10 +66,9 @@ def cosine_decay(epoch):
     return max(lrate, 1e-5)
 
 def log_prediction_to_file(ticker, last_date, last_close, risk_level, risk_ratio, xgb_val, xgb_lower, xgb_upper, trans_val, trans_lower, trans_upper, rate_today=None):
-    import datetime
-    results_dir = os.path.join(ROOT_DIR, "results")
-    os.makedirs(results_dir, exist_ok=True)
-    log_path = os.path.join(results_dir, "predictions_history.txt")
+    logs_dir = os.path.join(ROOT_DIR, "logs")
+    os.makedirs(logs_dir, exist_ok=True)
+    log_path = os.path.join(logs_dir, "predictions_history.txt")
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
     def get_trend_indicator(pred_val, ref_close):
@@ -115,7 +114,7 @@ def main():
     ]
     
     models_dir = os.path.join(ROOT_DIR, 'models')
-    results_dir = os.path.join(ROOT_DIR, 'results')
+    results_dir = os.path.join(ROOT_DIR, 'reports', 'figures')
     
     for ticker in TICKERS:
         print(f"\n--------------------------------------------------")
@@ -140,28 +139,32 @@ def main():
             X_tr, y_tr = X_train_i, y_train_i
             X_va, y_va = X_test_i, y_test_i
         
-        # Load best transformer parameters if they exist
-        best_params_path = os.path.join(models_dir, 'best_transformer_params.json')
+        # Load best transformer parameters for the specific ticker if they exist
+        best_params_ticker_path = os.path.join(ROOT_DIR, 'config', f'best_transformer_params_{ticker}.json')
+        best_params_path = os.path.join(ROOT_DIR, 'config', 'best_transformer_params.json')
+        
         d_model = 128
         num_heads = 8
         dropout_rate = 0.3
         learning_rate = 1e-4
         batch_size = 64
         
-        if os.path.exists(best_params_path):
+        chosen_params_path = best_params_ticker_path if os.path.exists(best_params_ticker_path) else best_params_path
+        
+        if os.path.exists(chosen_params_path):
             try:
                 import json
-                with open(best_params_path, 'r') as f:
+                with open(chosen_params_path, 'r') as f:
                     best_params = json.load(f)
                 d_model = best_params.get('d_model', d_model)
                 num_heads = best_params.get('num_heads', num_heads)
                 dropout_rate = best_params.get('dropout_rate', dropout_rate)
                 learning_rate = best_params.get('learning_rate', learning_rate)
                 batch_size = best_params.get('batch_size', batch_size)
-                print(f"🥇 [TUNED] Đang sử dụng siêu tham số tối ưu từ Optuna:")
+                print(f"🥇 [TUNED] Đang sử dụng siêu tham số tối ưu từ file {os.path.basename(chosen_params_path)}:")
                 print(f"   - d_model: {d_model}, num_heads: {num_heads}, dropout: {dropout_rate:.4f}, lr: {learning_rate:.6f}, batch: {batch_size}")
             except Exception as e:
-                print(f"⚠️ Không thể đọc best_params_path: {e}")
+                print(f"⚠️ Không thể đọc {chosen_params_path}: {e}")
         
         # 1. HUẤN LUYỆN TRANSFORMER (GIAI ĐOẠN 1)
         print(f"🤖 [TRAIN] Đang huấn luyện Transformer gốc cho riêng {ticker}...")
@@ -251,12 +254,37 @@ def main():
         plt.close()
         print(f"💾 Đã xuất biểu đồ cho {ticker} vào file: '{plot_path}'")
         
-        # Lưu trữ các file mô hình
+        # Lưu trữ các file mô hình có timestamp phiên bản và cập nhật bản latest
+        import datetime
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M")
+        
+        # Tên file phiên bản có timestamp
+        xgb_ts_name = f'xgboost_model_{ticker}_{timestamp}.pkl'
+        model_ts_name = f'transformer_model_{ticker}_{timestamp}.keras'
+        feat_scaler_ts_name = f'feature_scaler_{ticker}_{timestamp}.pkl'
+        targ_scaler_ts_name = f'target_scaler_{ticker}_{timestamp}.pkl'
+        
+        # Tên file latest mặc định
+        xgb_latest_name = f'xgboost_model_{ticker}.pkl'
+        model_latest_name = f'transformer_model_{ticker}.keras'
+        feat_scaler_latest_name = f'feature_scaler_{ticker}.pkl'
+        targ_scaler_latest_name = f'target_scaler_{ticker}.pkl'
+        
         os.makedirs(models_dir, exist_ok=True)
-        joblib.dump(xgb_model, os.path.join(models_dir, f'xgboost_model_{ticker}.pkl'))
-        transformer_model.save(os.path.join(models_dir, f'transformer_model_{ticker}.keras'))
-        joblib.dump(transformer.feature_scaler, os.path.join(models_dir, f'feature_scaler_{ticker}.pkl'))
-        joblib.dump(transformer.target_scaler, os.path.join(models_dir, f'target_scaler_{ticker}.pkl'))
+        
+        # 1. Lưu bản có timestamp phục vụ lưu vết lịch sử
+        joblib.dump(xgb_model, os.path.join(models_dir, xgb_ts_name))
+        transformer_model.save(os.path.join(models_dir, model_ts_name))
+        joblib.dump(transformer.feature_scaler, os.path.join(models_dir, feat_scaler_ts_name))
+        joblib.dump(transformer.target_scaler, os.path.join(models_dir, targ_scaler_ts_name))
+        
+        # 2. Lưu bản latest đè lên tệp cũ để backend API/inference hoạt động không đổi
+        joblib.dump(xgb_model, os.path.join(models_dir, xgb_latest_name))
+        transformer_model.save(os.path.join(models_dir, model_latest_name))
+        joblib.dump(transformer.feature_scaler, os.path.join(models_dir, feat_scaler_latest_name))
+        joblib.dump(transformer.target_scaler, os.path.join(models_dir, targ_scaler_latest_name))
+        
+        print(f"💾 Đã lưu Hybrid Models & Scalers phiên bản {timestamp} cho {ticker} (Bản latest được cập nhật thành công).")
         
         # --- DỰ BÁO CHO PHIÊN KẾ TIẾP (LIVE PREDICTION) ---
         print(f"\n🔮 BƯỚC 8: DỰ BÁO GIÁ MỞ CỬA KẾ TIẾP CHO {ticker}...")

@@ -134,15 +134,15 @@ Dưới đây là sai số thực tế trên tập kiểm thử (Test Set) sau k
 Mỗi khi muốn chạy lại toàn bộ quá trình tải dữ liệu, tính toán đặc trưng, huấn luyện các mô hình và xuất dự báo cho ngày mai, bạn chỉ cần gõ lệnh:
 
 ```powershell
-python main.py
+python scripts/run_pipeline.py
 ```
 
-- **Kết quả đầu ra:** Các biểu đồ so sánh dự báo của các mô hình được lưu độc lập cho từng mã: `results/model_battle_result_VNM.VN.png`, `results/model_battle_result_GOOGL.png`, và `results/model_battle_result_META.png`.
+- **Kết quả đầu ra:** Các biểu đồ so sánh dự báo của các mô hình được lưu độc lập cho từng mã: `reports/figures/model_battle_result_VNM.VN.png`, `reports/figures/model_battle_result_GOOGL.png`, và `reports/figures/model_battle_result_META.png`.
 - **Các mô hình đã huấn luyện** được tự động lưu trong thư mục `models/` để sử dụng dự báo nhanh mà không cần huấn luyện lại.
 - **Để dọn dẹp các file rác phát sinh** (như Python cache, Jupyter checkpoints), bạn có thể chạy:
 
 ```powershell
-python clean_workspace.py
+python scripts/clean_workspace.py
 ```
 
 ---
@@ -150,7 +150,7 @@ python clean_workspace.py
 ## 5. THIẾT KẾ WEB APPLICATION (LỘ TRÌNH TƯƠNG LAI)
 
 ### 💾 Kế hoạch thiết kế Cơ sở dữ liệu (Database Design)
-- **Môi trường Phát triển (Development):** Sử dụng **FastAPI + SQLite** để chạy thử nghiệm offline trên máy cá nhân. Cơ sở dữ liệu SQLite được lưu trữ dưới dạng một file duy nhất trong thư mục dự án (ví dụ: `data/stock_predictions.db`).
+- **Môi trường Phát triển (Development):** Sử dụng **FastAPI + SQLite** để chạy thử nghiệm offline trên máy cá nhân. Cơ sở dữ liệu SQLite được lưu trữ dưới dạng một file duy nhất trong thư mục dự án (ví dụ: `data/processed/stock_predictions.db`).
 - **Môi trường Triển khai (Production/Deploy):** Chuyển đổi sang sử dụng **PostgreSQL** chạy trên môi trường đám mây (như Neon, Supabase, Render) để hỗ trợ nhiều người dùng truy cập đồng thời và quản lý dữ liệu lớn ổn định hơn.
 
 ### 🔌 Vai trò của Backend FastAPI
@@ -160,26 +160,26 @@ python clean_workspace.py
 
 ---
 
-## 6. MÔ HÌNH LAI (HYBRID MODEL) - CẬP NHẬT 27/05/2026 (NÂNG CẤP ĐẶC TRƯNG DỪNG VÀ OPTUNA)
+## 6. MÔ HÌNH LAI (HYBRID MODEL) - CẬP NHẬT 29/05/2026 (LÀM SẠCH TIN TỨC & TÍCH HỢP CƠ SỞ DỮ LIỆU)
 
-Hệ thống đã nâng cấp kiến trúc lai (Hybrid Model) kết hợp tối ưu siêu tham số Optuna và làm sạch đặc trưng dạng tỉ lệ:
-- **Biến đổi Đặc trưng dừng (Stationary Features):**
-  - Loại bỏ các mức giá tuyệt đối dễ gây hiện tượng quá khớp dữ liệu quá khứ.
-  - Áp dụng lọc nhiễu đệ quy Kalman Filter để khử răng cưa và làm mịn đường giá.
-  - Tích hợp 2 chỉ số vĩ mô: **Bond Yield 10Y (^TNX)** và **Dollar Index Change (DXY)**.
-  - Rút gọn bộ chỉ báo kỹ thuật gốc thành **24 đặc trưng dừng hoàn chỉnh**.
-- **Tối ưu siêu tham số (Optuna Tuning):**
-  - Tích hợp công cụ Optuna tự động tìm cấu hình tốt nhất tại [tune_transformer.py](file:///c:/Users/ACER/Documents/Stock-Opening-Price-Prediction/src/predict_runner/tune_transformer.py).
-  - Quét siêu tham số tối ưu (đầu ra cấu hình tốt nhất: `d_model=64`, `num_heads=2`, `dropout=0.2582`, `lr=0.000051`, `batch_size=32`).
-- **Cơ chế hoạt động lai mới:**
-  1. **Transformer** (dựng với cấu hình Optuna, học trên chuỗi dữ liệu tỷ lệ 3D dạng dừng `[N, 45, 24]`) trích xuất các mẫu hình phức tạp trong quá khứ.
-  2. Lấy đầu ra ẩn đại diện từ lớp áp chót **Dense(32)** của Transformer làm vector đặc trưng chuỗi thời gian ẩn (**Learned Features** - 32 chiều).
-  3. Ghép nối (Concatenate) 32 chiều ẩn này với 24 chiều đặc trưng tỷ lệ của ngày hiện tại tạo thành vector phẳng **56 chiều** (`X_hybrid`).
-  4. **Kỹ thuật Stacking chống Overfitting (Phân bổ dữ liệu 90/10):**
-     - Mạng **Transformer** huấn luyện trước trên **90% dữ liệu đầu tiên** của tập Train.
-     - Mô hình **XGBoost** huấn luyện trên **10% dữ liệu holdout** còn lại dựa trên **56 đặc trưng kết hợp**.
-- **Cách khởi chạy:**
-  * Để chạy tối ưu tham số Optuna: `python src/predict_runner/tune_transformer.py`
-  * Để chạy huấn luyện và dự báo lai: `python src/predict_runner/hybrid_main.py`
+Hệ thống đã trải qua một đợt nâng cấp quan trọng liên quan đến dữ liệu tin tức cảm xúc và tối ưu hóa lõi AI:
+
+### 📰 Làm sạch và Lọc tin tức phân tán theo mã cổ phiếu (Ticker-specific Filtering):
+- **Loại bỏ nhiễu**: Loại bỏ hoàn toàn các tin tức không liên quan (như MCM/Mộc Châu) ra khỏi phạm vi phân tích của VNM.VN để tránh làm sai lệch điểm cảm xúc.
+- **Bộ lọc từ khóa động**: Khi quét tin tức, hệ thống chỉ thu thập tin dựa trên từ khóa khớp chính xác với mã cổ phiếu đang dự báo:
+  - **VNM.VN**: `["VNM", "Vinamilk"]`
+  - **GOOGL**: `["GOOGL", "Google", "Alphabet"]`
+  - **META**: `["META", "Facebook"]`
+- **Lọc nguồn RSS CafeF**: Các nguồn tin Việt Nam được lọc từ khóa nghiêm ngặt; tin không chứa từ khóa mục tiêu sẽ bị loại bỏ hoàn toàn.
+- **Làm sạch Cache**: Cài đặt lại định dạng năm 4 chữ số đồng bộ (`%Y-%m-%d`) và xóa bỏ các cache lỗi cũ để tái tạo dữ liệu cảm xúc sạch.
+
+### 💾 Tích hợp trực tiếp Cơ sở dữ liệu NewsSentiment:
+- Khi có yêu cầu dự báo (`POST /api/predict/trigger/{ticker}`), các tin tức crawl được sẽ được phân tích điểm số cảm xúc (VADER/FinBERT) và tự động ghi vào bảng cơ sở dữ liệu `news_sentiments`.
+- Điều này giúp giao diện Web Dashboard hiển thị trực tiếp danh sách bài báo cùng điểm số và nhãn cảm xúc cụ thể tương ứng cho từng mã cổ phiếu.
+
+### ⚙️ Lộ trình Tối ưu hóa AI cốt lõi tiếp theo (Bỏ qua yếu tố Web):
+1. **Đồng bộ Kalman Filter**: Đưa Kalman Filter làm mịn giá đóng cửa vào hàm `fetch_and_prepare_data` trong `src/data_loader.py` để đồng nhất dữ liệu chỉ báo kỹ thuật lúc Train và lúc Inference.
+2. **Tuning Optuna Độc lập**: Chỉnh sửa `scripts/run_tuning.py` để tìm kiếm siêu tham số tối ưu riêng biệt cho từng mã cổ phiếu (VNM.VN, GOOGL, META) thay vì dùng chung cấu hình của META.
+3. **Xây dựng hệ thống Backtest lịch sử**: Viết script giả lập các chiến lược giao dịch thực tế trên tập Test để đo lường lợi nhuận thực tế (Total Return, Sharpe Ratio, Maximum Drawdown).
 
 

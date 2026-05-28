@@ -54,20 +54,27 @@ Nhiệm vụ chính: Thu thập dữ liệu từ các nguồn chính thống và
 ---
 
 ### 🎛️ Feature Engineering (`src/features.py`)
-Mã nguồn này quản lý lớp `DataTransformer` chịu trách nhiệm tạo ra **15 đặc trưng kỹ thuật và vĩ mô** từ dữ liệu giá thô:
+Mã nguồn này quản lý lớp `DataTransformer` chịu trách nhiệm tạo ra **24 đặc trưng kỹ thuật, vĩ mô và cảm xúc** từ dữ liệu giá thô:
 
 1.  `rsi_14`: Chỉ số sức mạnh tương đối (đo lường quá mua/quá bán).
-2.  `macd`, `macdh`, `macds`: Các đường trung bình động hội tụ phân kỳ (đo lường động lượng).
-3.  `volatility_20`: Độ lệch chuẩn của tỷ suất sinh lời trong 20 ngày (đo lường mức độ rủi ro).
-4.  `close_lag1`: Giá đóng cửa ngày hôm trước (tạo liên kết trễ thời gian).
-5.  `volume_change`: Tỷ lệ thay đổi khối lượng giao dịch.
-6.  `intraday_return`: Tỷ suất sinh lời nội trong ngày giao dịch trước.
-7.  `bb_lower`, `bb_middle`, `bb_upper`: Dải Bollinger Bands (xác định biên độ biến động giá).
-8.  `atr_14`: Khoảng dao động thực tế trung bình (đo lường độ biến động tuyệt đối).
-9.  `ema_14`: Đường trung bình động lũy thừa (làm mượt nhiễu giá).
-10. `roc_10`: Tỷ lệ thay đổi giá trong 10 phiên.
-11. `adx_14`: Chỉ số định hướng trung bình (đo lường độ mạnh yếu của xu hướng).
-12. `market_return`: **[Đặc trưng mới]** Tỷ suất sinh lời của chỉ số thị trường vĩ mô tham chiếu.
+2.  `macd_ratio`: Chỉ báo MACD line dạng tỷ lệ so với Close.
+3.  `volatility_20`: Độ lệch chuẩn của tỷ suất sinh lời trong 20 ngày (đo lường rủi ro).
+4.  `close_lag1_ratio`, `close_lag2_ratio`, `close_lag3_ratio`: Tỷ lệ thay đổi giá đóng cửa trễ 1, 2, 3 phiên so với Close hiện tại.
+5.  `open_lag1_ratio`, `open_lag2_ratio`: Tỷ lệ thay đổi giá mở cửa trễ 1, 2 phiên so với Close hiện tại.
+6.  `rsi_lag1`: Sức mạnh tương đối của phiên trước.
+7.  `volume_change`: Tỷ lệ thay đổi khối lượng giao dịch.
+8.  `intraday_return`: Tỷ suất sinh lời nội trong ngày giao dịch trước `(Close - Open) / Open`.
+9.  `bb_lower_ratio`, `bb_middle_ratio`, `bb_upper_ratio`: Các dải Bollinger Bands dạng tỷ lệ so với Close.
+10. `atr_ratio`: Biên độ dao động thực tế trung bình (ATR 14) chia cho Close.
+11. `ema_14_ratio`: Đường trung bình di động lũy thừa (EMA 14) dạng tỷ lệ so với Close.
+12. `roc_10`: Tốc độ thay đổi giá trong 10 phiên.
+13. `adx_14`: Chỉ số định hướng trung bình (đo cường độ xu hướng).
+14. `market_return`: Tỷ suất sinh lời của chỉ số thị trường vĩ mô tham chiếu (ETF VNM cho Việt Nam, S&P 500 cho Mỹ).
+15. `vix`: Chỉ số đo lường trạng thái sợ hãi của thị trường.
+16. `sentiment_score`: Điểm số cảm xúc trung bình ngày từ tin tức (NLP FinBERT hoặc VADER).
+17. `news_volume`: Tỷ lệ lượng tin tức thu thập được trong ngày.
+18. `bond_yield_10y`: Lợi suất trái phiếu chính phủ Mỹ 10 năm (`^TNX`).
+19. `dollar_index_change`: Biến động tỷ lệ ngày của Dollar Index (`DX-Y.NYB`).
 
 *   **Chuẩn hóa dữ liệu:** Sử dụng `StandardScaler` để đưa tất cả các đặc trưng về phân phối chuẩn (trung bình = 0, độ lệch chuẩn = 1), giúp mạng Neural hội tụ tốt hơn.
 
@@ -78,18 +85,17 @@ Mã nguồn này quản lý lớp `DataTransformer` chịu trách nhiệm tạo 
 Hệ thống sử dụng phương pháp **"Song mã"** kết hợp giữa Học máy truyền thống và Học sâu:
 
 #### 🌳 1. Mô hình XGBoost (Extreme Gradient Boosting)
-*   **Cơ chế:** Là thuật toán cây quyết định tăng cường hiệu năng cao. Đầu vào được làm phẳng (flatten) từ 3D `(45, 15)` thành 2D `(675,)`.
-*   **Tối ưu hóa tốc độ:** Sử dụng `RandomizedSearchCV` quét ngẫu nhiên 6 cấu hình siêu tham số tối ưu thay vì quét toàn bộ lưới (Grid Search), giúp giảm thời gian huấn luyện từ 10 phút xuống dưới 2 phút mà không làm giảm độ chính xác.
-*   **Cross Validation:** Áp dụng `TimeSeriesSplit(n_splits=5)` để chia dữ liệu kiểm thử theo dòng thời gian tăng dần, đảm bảo không xảy ra hiện tượng rò rỉ dữ liệu tương lai (Data Leakage).
+*   **Cơ chế:** Là thuật toán cây quyết định tăng cường hiệu năng cao. Đầu vào được làm phẳng (flatten) từ 3D `(45, 24)` thành 2D `(1080,)` hoặc dùng làm mô hình Lai trên tập đặc trưng phẳng 56 chiều.
+*   **Tối ưu hóa tốc độ:** Sử dụng `RandomizedSearchCV` quét nhanh cấu hình siêu tham số tốt nhất kết hợp kiểm thử chéo chuỗi thời gian (`TimeSeriesSplit`), giúp giảm thời gian tìm kiếm mà không làm giảm độ chính xác.
 
-#### 🤖 2. Mô hình lai ghép Conv1D-Transformer (Hybrid Architecture)
-Kiến trúc mô hình được thiết kế độc quyền gồm các khối tuần tự:
-1.  **Lớp Conv1D (Convolutional 1D):** Đứng ngay sau lớp Input để trích xuất các đặc trưng cục bộ liền kề trong chuỗi thời gian ngắn hạn (kích thước bộ lọc là 128, kernel_size = 3).
+#### 🤖 2. Mô hình lai ghép Conv1D-Transformer (Encoder Architecture)
+Kiến trúc mô hình được thiết kế gồm các khối tuần tự:
+1.  **Lớp Conv1D (Convolutional 1D):** Đứng ngay sau lớp Input để trích xuất các đặc trưng cục bộ liền kề trong chuỗi thời gian ngắn hạn (filters = d_model, kernel_size = 3).
 2.  **Layer Normalization:** Giữ cho phân phối đầu ra của Conv1D ổn định.
-3.  **Positional Embedding:** Mã hóa thông tin thứ tự thời gian của các ngày trong chuỗi 45 ngày.
+3.  **Positional Embedding:** Lớp nhúng toán học gán thẻ thứ tự thời gian cho dữ liệu chuỗi 45 ngày.
 4.  **Multi-Head Attention (2 khối):** Tìm hiểu mối tương quan dài hạn giữa các ngày trong quá khứ.
-5.  **Flatten & Dense Layers:** Chuyển đổi ma trận đặc trưng về dạng vector 1D và đưa qua các lớp Dropout (0.2) để chống overfitting trước khi ra giá trị dự đoán cuối cùng.
-6.  **Cosine Decay Scheduler:** Hạ dần tốc độ học (Learning Rate) mượt mà theo hình sóng Cosine từ `1e-4` về `1e-5` giúp mô hình hội tụ ổn định.
+5.  **Flatten & Dense Layers:** Chuyển đổi ma trận đặc trưng về dạng vector 1D, đi qua các lớp Dense trung gian (d_model, d_model // 2) kết hợp Dropout giảm Overfitting và trích xuất vector 32 chiều ẩn (latent features) trước khi ra kết quả dự đoán.
+6.  **Học máy lai (Hybrid Model):** Ghép nối vector ẩn 32 chiều này với 24 đặc trưng gốc của ngày hiện tại thành vector phẳng 56 chiều để huấn luyện mô hình XGBoost cuối cùng.
 
 ---
 
@@ -128,9 +134,9 @@ Mạng Deep Learning được cấu hình với các tham số huấn luyện ch
 
 ---
 
-## 4. QUY TRÌNH CHẠY CHÍNH CỦA PIPELINE (`main.py`)
+## 4. QUY TRÌNH CHẠY CHÍNH CỦA PIPELINE (`scripts/run_pipeline.py`)
 
-Khi bạn thực thi lệnh `python main.py`, hệ thống sẽ tự động thực hiện tuần tự các bước sau:
+Khi bạn thực thi lệnh `python scripts/run_pipeline.py`, hệ thống sẽ tự động thực hiện tuần tự các bước sau:
 
 1.  **Huấn luyện độc lập (Individual Training = True):**
     - Vòng lặp duyệt qua từng cổ phiếu trong danh sách `["VNM.VN", "GOOGL", "META"]`.
@@ -141,7 +147,7 @@ Khi bạn thực thi lệnh `python main.py`, hệ thống sẽ tự động th�
     - Sử dụng các mô hình đã học để đưa ra dự đoán trên 20% dữ liệu Test độc lập.
     - Thực hiện giải chuẩn hóa ngược (Inverse Scaling) để chuyển tỷ suất sinh lời thành giá trị tiền mặt VNĐ/USD tuyệt đối.
     - Tính toán sai số **RMSE**, **MAE** (lệch bao nhiêu tiền trung bình trên một phiên), và **MAPE** (tỷ lệ lệch %).
-    - Vẽ và lưu biểu đồ trực quan hóa xu hướng giá thực tế vs dự báo vào thư mục `results/`.
+    - Vẽ và lưu biểu đồ trực quan hóa xu hướng giá thực tế vs dự báo vào thư mục `reports/figures/`.
 3.  **Dự báo phiên kế tiếp (Real-time Inference - Bước 8):**
     - Kết nối yfinance tải trực tuyến dữ liệu giao dịch 150 ngày gần nhất của cổ phiếu đó và chỉ số thị trường vĩ mô tham chiếu.
     - Tính toán toàn bộ 15 đặc trưng kỹ thuật và vĩ mô thời gian thực.

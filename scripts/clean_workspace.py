@@ -9,8 +9,8 @@ def clean_workspace():
     except AttributeError:
         pass # python < 3.7
         
-    # Thư mục gốc của dự án (nơi đặt script này)
-    root_dir = os.path.dirname(os.path.abspath(__file__))
+    # Thư mục gốc của dự án (nơi đặt thư mục cha của script này)
+    root_dir = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
     print(f"=== Bắt đầu dọn dẹp thư mục: {root_dir} ===\n")
     
     # Các thư mục rác cần quét và xóa

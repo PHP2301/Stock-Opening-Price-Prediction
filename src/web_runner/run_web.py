@@ -16,8 +16,8 @@ from src.web.backend.db import init_db, SessionLocal, Stock, StockPrice, Predict
 from src.data_loader import get_realtime_usd_vnd_rate
 
 def parse_predictions_history(db: Session):
-    print("⏳ Đang phân tích file log 'results/predictions_history.txt' để khôi phục lịch sử dự báo...")
-    log_path = os.path.join(ROOT_DIR, "results", "predictions_history.txt")
+    print("⏳ Đang phân tích file log 'logs/predictions_history.txt' để khôi phục lịch sử dự báo...")
+    log_path = os.path.join(ROOT_DIR, "logs", "predictions_history.txt")
     if not os.path.exists(log_path):
         print("⚠️ Không tìm thấy file predictions_history.txt, bỏ qua bước import lịch sử dự đoán.")
         return

@@ -19,7 +19,7 @@ import yfinance as yf
 import pandas_ta as ta
 
 # Cấu hình absolute root path để có thể chạy script từ bất kỳ đâu
-ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(ROOT_DIR)
 
 # ==========================================
@@ -68,10 +68,9 @@ def cosine_decay(epoch):
     return max(lrate, 1e-5)
 
 def log_prediction_to_file(ticker, last_date, last_close, risk_level, risk_ratio, xgb_val, xgb_lower, xgb_upper, trans_val, trans_lower, trans_upper, rate_today=None):
-    import datetime
-    results_dir = os.path.join(ROOT_DIR, "results")
-    os.makedirs(results_dir, exist_ok=True)
-    log_path = os.path.join(results_dir, "predictions_history.txt")
+    logs_dir = os.path.join(ROOT_DIR, "logs")
+    os.makedirs(logs_dir, exist_ok=True)
+    log_path = os.path.join(logs_dir, "predictions_history.txt")
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
     def get_trend_indicator(pred_val, ref_close):
@@ -123,7 +122,7 @@ def main():
     ]
     
     models_dir = os.path.join(ROOT_DIR, 'models')
-    results_dir = os.path.join(ROOT_DIR, 'results')
+    results_dir = os.path.join(ROOT_DIR, 'reports', 'figures')
     
     if INDIVIDUAL_TRAINING:
         print("\n" + "="*60)

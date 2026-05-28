@@ -1,223 +1,320 @@
-# 📊 Hệ thống Dự báo Giá Mở cửa Cổ phiếu (Stock Opening Price Prediction)
+# Stock Opening Price Prediction
 
-Chào mừng bạn đến với tài liệu hướng dẫn và đánh giá tổng thể của dự án **Hệ thống Dự báo Giá Mở cửa Chứng khoán (VNM.VN, GOOGL, META)**. 
+Hệ thống dự báo giá mở cửa phiên giao dịch tiếp theo cho các mã chứng khoán **VNM.VN** (Vinamilk), **GOOGL** (Alphabet/Google) và **META** (Meta Platforms), sử dụng kiến trúc lai ghép giữa XGBoost và Conv1D-Transformer.
 
-Đây là tài liệu duy nhất và toàn diện nhất chứa tất cả các thông tin về nguyên lý hoạt động, cấu trúc mã nguồn, quy trình huấn luyện AI, cơ chế xử lý lỗi tỷ giá lịch sử, hệ thống quản trị rủi ro tự động, và kết quả đánh giá mô hình thực tế. Khách hàng hoặc đối tác có thể dễ dàng xem và đánh giá tổng thể toàn bộ dự án chỉ qua một file duy nhất này.
+Dự án được xây dựng phục vụ nghiên cứu định lượng (quantitative research), tập trung vào ba mục tiêu: độ chính xác dự báo, kiểm soát rủi ro, và tái lập kết quả.
 
 ---
 
-## 🗺️ 1. SƠ ĐỒ LUỒNG HOẠT ĐỘNG TỔNG QUAN (DATAFLOW)
+## Mục lục
 
-Quy trình dữ liệu từ lúc tải về, xử lý lọc nhiễu, trích xuất đặc trưng cho đến khi huấn luyện AI và đưa ra dự báo phiên tiếp theo được thực hiện khép kín như sau:
+1. [Nguyên lý thiết kế](#1-nguyên-lý-thiết-kế)
+2. [Cấu trúc thư mục](#2-cấu-trúc-thư-mục)
+3. [Luồng xử lý dữ liệu](#3-luồng-xử-lý-dữ-liệu)
+4. [Chi tiết các module](#4-chi-tiết-các-module)
+5. [Kiến trúc mô hình AI](#5-kiến-trúc-mô-hình-ai)
+6. [Hệ thống kiểm thử Backtest](#6-hệ-thống-kiểm-thử-backtest)
+7. [Quản trị rủi ro](#7-quản-trị-rủi-ro)
+8. [Xử lý nhiễu tỷ giá USD/VND](#8-xử-lý-nhiễu-tỷ-giá-usdvnd)
+9. [Kết quả đánh giá](#9-kết-quả-đánh-giá)
+10. [Hướng dẫn cài đặt và chạy](#10-hướng-dẫn-cài-đặt-và-chạy)
+
+---
+
+## 1. Nguyên lý thiết kế
+
+### Dự đoán tỷ suất sinh lời thay vì giá tuyệt đối
+
+Giá cổ phiếu là chuỗi thời gian không dừng (non-stationary). Dự đoán trực tiếp giá tuyệt đối thường dẫn đến hiện tượng mô hình chỉ sao chép giá ngày hôm trước. Thay vào đó, hệ thống dự đoán **tỷ suất sinh lời mở cửa (Opening Return)**:
+
+$$\text{target\_return} = \frac{\text{Open}_{T} - \text{Close}_{T-1}}{\text{Close}_{T-1}}$$
+
+Sau khi có tỷ suất dự đoán, giá mở cửa được giải mã:
+
+$$\text{Predicted Open} = \text{Close}_{today} \times (1 + \text{target\_return}_{predicted})$$
+
+### Cửa sổ trượt (Lookback Window)
+
+Mô hình sử dụng chuỗi **45 phiên giao dịch liên tiếp** làm đầu vào. Đầu vào Deep Learning có dạng tensor 3 chiều: `(N, 45, 24)` — cho phép Transformer tìm kiếm mối tương quan tuần hoàn và xu hướng trung hạn.
+
+### Chuẩn hóa StandardScaler
+
+Hệ thống sử dụng StandardScaler (mean=0, std=1) thay cho MinMaxScaler. StandardScaler ít nhạy với giá trị ngoại lai (outliers), giữ nguyên tỷ lệ biến động thực tế và tăng tốc độ hội tụ.
+
+---
+
+## 2. Cấu trúc thư mục
+
+```
+Stock-Opening-Price-Prediction/
+├── config/                     # Cấu hình siêu tham số Optuna (.json)
+├── data/                       # Dữ liệu giá thô và đặc trưng đã xử lý (.csv)
+│   └── raw/                    # Dữ liệu lịch sử DNSE/CafeF
+├── docs/                       # Tài liệu bổ sung
+├── logs/                       # Lịch sử dự báo và log hệ thống
+├── models/                     # Mô hình đã huấn luyện (.pkl, .keras) và scalers
+├── notebooks/                  # Jupyter Notebooks phân tích và giải thích
+│   ├── 01_EDA.ipynb
+│   ├── 02_Explain_DataLoader.ipynb
+│   ├── 03_Explain_Features.ipynb
+│   ├── 04_Explain_AIModels.ipynb
+│   ├── 05_Explain_PredictionRunner.ipynb
+│   ├── 06_Explain_WebRunner.ipynb
+│   └── 07_Explain_Backtest.ipynb
+├── reports/
+│   └── figures/                # Biểu đồ so sánh dự báo, equity curve
+├── scripts/                    # Các script thực thi chính
+│   ├── run_pipeline.py         # Pipeline huấn luyện + dự báo đầy đủ
+│   ├── run_training.py         # Huấn luyện Hybrid Stacking (XGBoost + Transformer)
+│   ├── run_training_transformer.py  # Huấn luyện riêng Transformer
+│   ├── run_tuning.py           # Tối ưu siêu tham số bằng Optuna
+│   ├── run_backtest.py         # Mô phỏng giao dịch Backtest thực tế
+│   └── clean_workspace.py      # Dọn dẹp tệp rác sau huấn luyện
+├── src/                        # Mã nguồn cốt lõi
+│   ├── data_loader.py          # Tải dữ liệu Yahoo/DNSE, quy đổi USD-VND, lọc nhiễu
+│   ├── features.py             # DataTransformer: sliding window, chuẩn hóa, Kalman Filter
+│   ├── ai_models.py            # Kiến trúc XGBoost và Conv1D-Transformer
+│   ├── news_sentiment.py       # Phân tích cảm xúc tin tức (FinBERT/VADER)
+│   ├── web/
+│   │   ├── backend/            # FastAPI REST API server
+│   │   └── frontend/           # Giao diện web (HTML, CSS, JS, Chart.js)
+│   └── web_runner/             # Entry point khởi chạy web server
+├── requirements.txt
+├── LICENSE
+└── README.md
+```
+
+---
+
+## 3. Luồng xử lý dữ liệu
 
 ```mermaid
 graph TD
-    A[Nguồn dữ liệu: Yahoo Finance & DNSE] -->|Tải dữ liệu thô| B[Tải tỷ giá USD/VND trực tuyến]
-    B -->|Bộ lọc tỷ giá 3 lớp: Lọc nhiễu & Điền khuyết| C[Bộ tải dữ liệu: data_loader.py]
-    C -->|Quy đổi USD sang VNĐ theo tỷ giá động| D[Đồng nhất giá trị VNĐ]
-    D -->|Trích xuất đặc trưng & Vĩ mô S&P500/VNIndex/VIX| E[Feature Engineering: features.py]
-    E -->|Chuẩn hóa StandardScaler & sliding window 30 ngày| F[Bộ biến đổi: DataTransformer]
-    F -->|Dữ liệu chuỗi thời gian 3D| G{Quy trình huấn luyện AI}
-    G -->|Tối ưu Hyperparameters + TimeSeriesSplit| H[Mô hình 1: XGBoost]
-    G -->|Conv1D + Transformer + L2 Regularizer + Huber Loss| I[Mô hình 2: Deep Transformer]
-    H -->|Dự đoán tỉ suất sinh lời mở cửa| J[Bộ giải mã kết quả: Target Scaler]
-    I -->|Dự đoán tỉ suất sinh lời mở cửa| J
-    J -->|Nhân giá đóng cửa gần nhất| K[Hệ thống Quản trị Rủi ro]
-    K -->|Tính ATR Safety Band & Cảnh báo Risk Level| L[Kết quả: Dự báo Giá mở cửa & Khoảng an toàn VNĐ/USD]
+    A[Yahoo Finance + DNSE API] --> B[Tải tỷ giá USD/VND trực tuyến]
+    B --> C[Bộ lọc tỷ giá 3 lớp]
+    C --> D[Quy đổi USD sang VND theo tỷ giá động]
+    D --> E[Feature Engineering: 24 đặc trưng kỹ thuật và vĩ mô]
+    E --> F[Kalman Filter đồng bộ nhiễu đặc trưng]
+    F --> G[StandardScaler + Sliding Window 45 ngày]
+    G --> H{Huấn luyện AI}
+    H --> I[XGBoost: RandomizedSearchCV + TimeSeriesSplit]
+    H --> J[Conv1D-Transformer: Cosine Decay + Huber Loss]
+    I --> K[Giải mã Target Scaler]
+    J --> K
+    K --> L[Quản trị rủi ro: ATR Safety Band + Risk Level]
+    L --> M[Kết quả dự báo + khoảng an toàn]
 ```
 
 ---
 
-## 🎯 2. NGUYÊN LÝ THIẾT KẾ CỐT LÕI (CORE PRINCIPLES)
+## 4. Chi tiết các module
 
-### 📌 Tại sao không dự đoán trực tiếp giá tuyệt đối?
-Trong tài chính, giá cổ phiếu tuyệt đối là một chuỗi không dừng (non-stationary). Nếu dùng trực tiếp giá đóng cửa/mở cửa tuyệt đối để huấn luyện mô hình, mô hình dễ bị hiện tượng **Overfitting** hoặc **Trễ xu hướng** (mô hình chỉ dự báo giá ngày mai bằng cách sao chép giá ngày hôm nay).
-*   **Giải pháp:** Dự án chuyển đổi mục tiêu thành **Dự đoán tỷ suất sinh lời mở cửa (Opening Return)**.
-*   **Công thức mục tiêu:** 
-    $$\text{target\_return} = \frac{\text{Giá mở cửa ngày } T - \text{Giá đóng cửa ngày } T-1}{\text{Giá đóng cửa ngày } T-1}$$
-*   Sau khi mô hình đưa ra tỷ lệ chênh lệch (%) này, hệ thống sẽ nhân ngược lại với giá đóng cửa phiên gần nhất để giải mã ra giá trị tiền mặt tuyệt đối:
-    $$\text{Giá mở cửa dự báo} = \text{Close}_{today} \times (1 + \text{target\_return}_{predicted})$$
+### A. Bộ tải dữ liệu — `src/data_loader.py`
 
-### ⏱️ Cơ chế Cửa sổ trượt (Lookback Window)
-Mô hình sử dụng một khoảng lịch sử dài **30 ngày** (`LOOKBACK_WINDOW = 30`) để học xu hướng:
-*   Đầu vào của mô hình Deep Learning có dạng 3 chiều: `(Số mẫu, 30 ngày, 16 đặc trưng)`.
-*   Điều này giúp Transformer tìm kiếm được các mối quan hệ tuần hoàn và xu hướng ngắn-trung hạn thay vì chỉ dự đoán dựa trên một điểm dữ liệu đơn lẻ.
+- **Dữ liệu lai ghép:** Mã VNM.VN sử dụng dữ liệu từ DNSE API (2012–2019) kết hợp Yahoo Finance (2019–nay). Mã Mỹ tải trực tiếp từ Yahoo Finance.
+- **Đồng nhất tiền tệ:** Giá cổ phiếu Mỹ được quy đổi sang VND theo tỷ giá động từng ngày (`USDVND=X`).
+- **Đồng bộ múi giờ:** DNSE API trả epoch millisecond. Hệ thống dùng `pytz` chuyển đổi sang `Asia/Ho_Chi_Minh` trước khi merge với Yahoo Finance, tránh lệch ngày.
+- **Chỉ số vĩ mô:** VanEck Vietnam ETF (`VNM`) cho thị trường VN, S&P 500 (`^GSPC`) cho thị trường Mỹ, cùng VIX (`^VIX`), lãi suất trái phiếu (`^TNX`) và Dollar Index (`DX-Y.NYB`).
 
-### ⚖️ Chuẩn hóa dữ liệu bằng StandardScaler
-Thay vì sử dụng `MinMaxScaler` vốn rất nhạy cảm với các điểm dị biệt (outliers) lịch sử, hệ thống sử dụng **StandardScaler** để đưa tất cả các đặc trưng và biến mục tiêu về phân phối chuẩn có:
-$$\text{Mean} = 0, \quad \text{Standard Deviation} = 1$$
-Điều này giúp giữ nguyên tỷ lệ biến động thực tế của thị trường, tránh hiện tượng nén dữ liệu do các phiên biến động mạnh, tăng tốc độ hội tụ và độ chính xác của mạng Neural.
+### B. Biến đổi đặc trưng — `src/features.py`
 
----
+Lớp `DataTransformer` tạo ra **24 đặc trưng** từ dữ liệu giá thô:
 
-## 📂 3. CẤU TRÚC THƯ MỤC DỰ ÁN
+| Nhóm | Đặc trưng | Mô tả |
+|---|---|---|
+| Giá | `close` | Giá đóng cửa |
+| Kỹ thuật | `rsi_14`, `MACD_12_26_9`, `ema_14`, `roc_10`, `adx_14` | Các chỉ báo xu hướng và động lượng |
+| Biến động | `volatility_20`, `atr_14`, `bb_lower/middle/upper` | Đo lường rủi ro và biên độ dao động |
+| Khối lượng | `volume_change` | Biến động thanh khoản |
+| Trễ thời gian | `lag_1`, `lag_2`, `lag_3` | Giá đóng cửa 1–3 phiên trước |
+| Nội phiên | `intraday_return` | Biến động trong ngày giao dịch trước |
+| Vĩ mô | `market_return`, `vix`, `treasury_yield`, `dollar_index` | Bối cảnh thị trường toàn cầu |
+| Cảm xúc | `sentiment_score`, `news_volume` | Phân tích tin tức FinBERT/VADER |
 
-```text
-Stock-Opening-Price-Prediction/
-├── data/                  # Lưu trữ dữ liệu giá thô và tệp đặc trưng đã xử lý (.csv)
-├── models/                # File mô hình đã học (.pkl cho XGBoost, .keras cho Transformer) và scalers
-├── notebooks/             # Thư mục chứa notebook phân tích dữ liệu khám phá (EDA)
-│   └── 01_EDA.ipynb
-├── results/               # Biểu đồ so sánh giá thực tế vs dự báo trên tập Test (.png)
-├── src/                   # Mã nguồn cốt lõi
-│   ├── ai_models.py       # Định nghĩa kiến trúc mô hình XGBoost và Conv1D-Transformer
-│   ├── data_loader.py     # Tải dữ liệu từ Yahoo/DNSE, đồng nhất VNĐ, lọc nhiễu tỷ giá
-│   └── features.py        # Lớp DataTransformer cắt sliding window và chuẩn hóa StandardScaler
-├── main.py                # File thực thi chạy toàn bộ pipeline huấn luyện & dự báo
-├── requirements.txt       # Danh sách các thư viện phụ thuộc của dự án
-└── README.md              # Tài liệu tổng thể này (File duy nhất bàn giao cho khách hàng)
-```
+Sau khi tính toán, hệ thống áp dụng **Kalman Filter** để đồng bộ và lọc nhiễu trên các đặc trưng, đo lường hiệu quả bằng hệ số tương quan Pearson.
+
+### C. Phân tích cảm xúc — `src/news_sentiment.py`
+
+Thu thập tin tức từ yfinance (quốc tế) và CafeF RSS (tiếng Việt). Dịch sang tiếng Anh theo batch qua `deep-translator`, chấm điểm bằng FinBERT (hoặc fallback VADER) và tổng hợp thành `sentiment_score` và `news_volume`.
+
+### D. Tối ưu siêu tham số — `scripts/run_tuning.py`
+
+Sử dụng framework Optuna với thuật toán TPE (Tree-structured Parzen Estimator) để dò tìm cấu hình Transformer tối ưu riêng cho từng mã cổ phiếu. Kết quả lưu vào `config/best_transformer_params_{ticker}.json`. Nếu cấu hình chưa tồn tại hoặc bị lỗi, hệ thống sẽ fallback sang tham số mặc định an toàn.
 
 ---
 
-## 🛠️ 4. CHI TIẾT CÁC THÀNH PHẦN MÃ NGUỒN
+## 5. Kiến trúc mô hình AI
 
-### 📂 A. Bộ tải dữ liệu (`src/data_loader.py`)
-*   **Tải dữ liệu lai ghép:**
-    - Đối với mã Việt Nam (`VNM.VN`): Tải dữ liệu từ năm 2012–2019 qua **DNSE/Entrade API** nhằm vượt qua giới hạn dữ liệu cũ của Yahoo Finance, sau đó nối với dữ liệu mới từ Yahoo Finance.
-    - Đối với mã Mỹ (`GOOGL`, `META`): Tải trực tiếp từ **Yahoo Finance**.
-*   **Đồng nhất tiền tệ (Quy đổi USD sang VNĐ):** 
-    - Để huấn luyện gộp chung và đánh giá trực quan, giá của các mã Mỹ được quy đổi động từng ngày theo tỷ giá thực tế từ Yahoo Finance (`USDVND=X`).
-*   **Tải chỉ số thị trường vĩ mô (Market Index):**
-    - Tải dữ liệu quỹ **VanEck Vietnam ETF (`VNM`)** làm đại diện cho thị trường Việt Nam và **S&P 500 (`^GSPC`)** cho thị trường Mỹ để tính toán biến động vĩ mô chung.
+Hệ thống sử dụng hai mô hình chạy song song, kết hợp qua cơ chế **Hybrid Stacking**:
 
-### 🎛️ B. Lớp biến đổi đặc trưng (`src/features.py`)
-Mã nguồn này quản lý lớp `DataTransformer` chịu trách nhiệm tạo ra **18 đặc trưng kỹ thuật, vĩ mô và tâm lý thị trường** từ dữ liệu giá thô và tin tức:
+### XGBoost (Extreme Gradient Boosting)
 
-1.  `close`: Giá đóng cửa của ngày hiện tại.
-2.  `rsi_14`: Chỉ số sức mạnh tương đối (Relative Strength Index).
-3.  `MACD_12_26_9`: Chỉ báo trung bình động hội tụ phân kỳ (MACD line).
-4.  `volatility_20`: Độ lệch chuẩn của tỷ suất sinh lời trong 20 ngày (đo lường rủi ro).
-5.  `close_lag1`: Giá đóng cửa ngày hôm trước (độ trễ 1 phiên).
-6.  `volume_change`: Tỷ lệ thay đổi khối lượng giao dịch.
-7.  `intraday_return`: Tỷ suất sinh lời nội trong ngày giao dịch trước.
-8.  `bb_lower`, `bb_middle`, `bb_upper`: Dải Bollinger Bands (xác định biên độ biến động giá).
-9.  `atr_14`: Chỉ báo biên độ dao động thực tế trung bình (ATR) đo lường mức độ biến động tuyệt đối.
-10. `ema_14`: Đường trung bình di động lũy thừa (EMA 14 phiên) giúp nắm bắt xu hướng giá trơn tru.
-11. `roc_10`: Động lượng giá qua chỉ số Rate of Change 10 phiên.
-12. `adx_14`: Chỉ số định hướng trung bình ADX 14 phiên (đo độ mạnh xu hướng).
-13. `market_return`: **[Vĩ mô]** Tỷ suất sinh lời của chỉ số thị trường vĩ mô tham chiếu.
-14. `vix`: **[Vĩ mô]** Chỉ số biến động sợ hãi VIX (`^VIX`) giúp mô hình nắm bắt tâm lý lo ngại của thị trường toàn cầu.
-15. `sentiment_score`: **[Tâm lý - Cảm xúc]** Điểm số cảm xúc tin tức tài chính được trích xuất tự động qua mô hình FinBERT/VADER (từ -1.0 đến 1.0).
-16. `news_volume`: **[Tâm lý - Cảm xúc]** Số lượng tin tức thu thập được trong ngày phản ánh độ nóng của thị trường.
+- Đầu vào làm phẳng từ tensor 3D `(45, 24)` thành vector `(1080,)`, nối thêm latent features trích xuất từ lớp áp chót của Transformer.
+- Tối ưu tham số bằng `RandomizedSearchCV` kết hợp `TimeSeriesSplit` (5 folds), tránh data leakage.
+
+### Conv1D-Transformer (Deep Architecture)
+
+| Lớp | Chi tiết |
+|---|---|
+| Input | Tensor `(45, 24)` |
+| Conv1D | 128 filters, kernel_size=3, L2 regularization |
+| LayerNorm | Ổn định phân phối sau Conv1D |
+| Positional Embedding | Mã hóa thứ tự thời gian |
+| Multi-Head Attention (x2) | 8 heads, key_dim=`d_model`, dropout=0.3 |
+| Residual + LayerNorm | Chống suy giảm gradient |
+| Global Average Pooling | Gom chiều thời gian |
+| Dense + Dropout | Chống overfitting |
+| Output | Scalar — tỷ suất sinh lời |
+
+Huấn luyện sử dụng **Huber Loss** (bền vững trước outliers), **Cosine Decay Scheduler** kết hợp **ReduceLROnPlateau** và **EarlyStopping** (patience=25).
+
+### Lưu trữ mô hình
+
+Mô hình được lưu với nhãn thời gian `_YYYYMMDD_HHMM` phục vụ lưu vết lịch sử, đồng thời ghi đè lên file tên chuẩn (ví dụ: `transformer_model_VNM.VN.keras`) để backend luôn tải được phiên bản mới nhất.
 
 ---
 
-## 🧠 5. KIẾN TRÚC MÔ HÌNH AI & PHÒNG CHỐNG OVERFITTING
+## 6. Hệ thống kiểm thử Backtest
 
-Hệ thống sử dụng phương pháp **"Song mã"** kết hợp giữa Học máy truyền thống và Học sâu:
+Module `scripts/run_backtest.py` mô phỏng chiến lược giao dịch **Overnight Trading** trên tập kiểm thử out-of-sample:
 
-### 1. Mô hình XGBoost (Extreme Gradient Boosting)
-*   **Cơ chế:** Là thuật toán cây quyết định tăng cường hiệu năng cao. Đầu vào được làm phẳng (flatten) từ 3D `(30, 18)` thành 2D `(540,)`.
-*   **Tối ưu tham số (GridSearchCV):** Áp dụng quét lưới kết hợp kiểm thử chéo chuỗi thời gian (`TimeSeriesSplit` với 5 splits) chạy song song (`n_jobs=-1`) để tự động tìm kiếm bộ siêu tham số tốt nhất.
-*   **Cross Validation:** Đảm bảo không xảy ra hiện tượng rò rỉ dữ liệu tương lai (Data Leakage).
+**Quy tắc giao dịch:**
+- Mua tại Close nếu cả hai mô hình đồng thuận báo tăng > +0.25%.
+- Bán toàn bộ tại Open phiên hôm sau.
+- Nếu không có tín hiệu đồng thuận: giữ tiền mặt.
 
-### 2. Mô hình lai ghép Conv1D-Transformer (Deep Architecture)
-Kiến trúc mô hình được thiết kế độc quyền gồm các khối tuần tự:
-*   **Lớp Conv1D (Convolutional 1D):** Đứng ngay sau lớp Input để trích xuất các đặc trưng cục bộ liền kề trong chuỗi thời gian ngắn hạn (filters = 128, kernel_size = 3, `kernel_regularizer=l2(1e-4)`).
-*   **Layer Normalization:** Giữ cho phân phối đầu ra của Conv1D ổn định.
-*   **Positional Embedding:** Mã hóa thông tin thứ tự thời gian của các ngày trong chuỗi 30 ngày.
-*   **Multi-Head Attention (2 khối):** Tìm hiểu mối tương quan dài hạn giữa các ngày trong quá khứ (**8 heads, key_dim = 128, dropout = 0.3**).
-*   **Flatten & Dense Layers:** Chuyển đổi ma trận đặc trưng về dạng vector 1D và đưa qua các lớp Dropout (0.3) và L2 regularization để chống overfitting.
-*   **Huber Loss:** Sử dụng thay thế cho MSE để tăng tính bền vững trước dữ liệu ngoại lai.
-*   **Cosine Decay Scheduler & ReduceLROnPlateau:** Hạ dần tốc độ học (Learning Rate) mượt mà giúp mô hình hội tụ tốt nhất.
+**Ma sát thị trường (Market Friction):**
 
----
+| Thị trường | Phí giao dịch | Slippage |
+|---|---|---|
+| Việt Nam (VNM.VN) | 0.20% (bao gồm thuế TNCN) | 0.10% |
+| Mỹ (GOOGL, META) | 0.10% | 0.05% |
 
-## 🛡️ 6. HỆ THỐNG QUẢN TRỊ RỦI RO TỰ ĐỘNG
+**Walk-Forward Validation:** Tập Test được chia thành 3 rolling window độc lập để kiểm tra tính ổn định qua các chu kỳ thị trường khác nhau.
 
-Dự án không chỉ đưa ra một giá dự báo đơn lẻ mà tích hợp một pipeline quản lý rủi ro giúp nhà đầu tư đưa ra quyết định an toàn:
+### Kết quả Backtest — VNM.VN (693 phiên, 2023–2026)
 
-1.  **Dải an toàn ATR (ATR Safety Band):**
-    Tính toán dựa trên chỉ báo biến động ATR (Average True Range):
-    $$\text{Khoảng giá an toàn} = \text{Giá dự báo} \pm 1.5 \times \text{ATR}_{14}$$
-    Giúp xác định khoảng dao động giá hợp lý trong ngày tiếp theo, ngăn chặn các quyết định mua đuổi hoặc bán tháo quá mức.
-2.  **Cảnh báo mức độ rủi ro (Risk Alert Levels):**
-    Phân loại rủi ro dựa trên tỷ lệ biến động giá thực tế của thị trường:
-    *   🟢 **Thấp (Biến động thấp - An toàn):** Tỷ lệ biến động dưới 1.5%.
-    *   🟡 **Trung bình (Biến động nhẹ - Thận trọng):** Tỷ lệ biến động từ 1.5% đến 3.0%.
-    *   🔴 **Cao (Biến động mạnh - Rủi ro cao):** Tỷ lệ biến động trên 3.0%.
+| Chỉ số | Chiến lược Hybrid | Buy & Hold |
+|---|---|---|
+| Tổng lợi nhuận | -0.62% | -5.97% |
+| Sharpe Ratio | -0.13 | — |
+| Max Drawdown | -2.98% | -31.70% |
+| Số lệnh | 5 | 1 |
+
+Chiến lược bảo vệ vốn hiệu quả: Max Drawdown chỉ -2.98% so với -31.70% của Buy & Hold. Trong giai đoạn thị trường giảm mạnh (Window 2), chiến lược đã tự động đứng ngoài hoàn toàn bằng tiền mặt.
 
 ---
 
-## 🔎 7. CASE STUDY: XỬ LÝ NHIỄU TỶ GIÁ LỊCH SỬ (USD/VND OUTLIERS)
+## 7. Quản trị rủi ro
 
-Trong quá trình huấn luyện mô hình cho các mã cổ phiếu Mỹ (GOOGL, META) quy đổi sang VNĐ, hệ thống đã phát hiện và xử lý thành công lỗi nhiễu dữ liệu tỷ giá nghiêm trọng từ nguồn Yahoo Finance (`USDVND=X`).
+Hệ thống không chỉ đưa ra giá dự báo đơn lẻ mà tích hợp pipeline quản lý rủi ro:
 
-### Ví dụ thực tế về sự tăng vọt và rơi thảm ảo trong 1 ngày (Mã META):
-*   **Ngày 29-04-2014:** Giá đóng cửa của META là **$57.70 USD**, tỷ giá `USDVND=X` là **21.061 VNĐ** $\rightarrow$ Giá quy đổi là **1.215.161 VNĐ**.
-*   **Ngày 30-04-2014 (Phiên lỗi):** Giá đóng cửa của META tăng lên **$59.31 USD**, tuy nhiên tỷ giá `USDVND=X` bị Yahoo Finance ghi nhận sai lệch nghiêm trọng rơi về **3.210 VNĐ** (thay vì khoảng ~21.000 VNĐ). 
-    *   Việc này làm giá quy đổi META bị sụt giảm nhân tạo thảm hại xuống **190.399 VNĐ** (giảm gần 6.4 lần!).
-*   **Ngày 01-05-2014:** Giá đóng cửa của META là **$60.67 USD**, tỷ giá phục hồi về **21.050 VNĐ** $\rightarrow$ Giá quy đổi tăng vọt lên **1.277.185 VNĐ**.
-*   **Hệ quả lỗi:**
-    *   Tạo ra một mức sinh lời ảo đột biến: ngày 30-04-2014 tỷ suất sinh lời mở cửa ngày tiếp theo (`target_return`) vọt lên **+562.89%** (tăng 5.6 lần), và ngay hôm sau rơi thảm hại **-84.9%**.
-    *   Khi sử dụng `MinMaxScaler`, các giá trị nhiễu `+562%` này đã ép chặt các ngày giao dịch bình thường (chỉ từ `-1%` đến `+1%`) về một dải hẹp quanh `0.5`, khiến mô hình Transformer mất khả năng học và dự báo ra giá trị âm.
+**Dải an toàn ATR (ATR Safety Band):**
 
-### Cách khắc phục triệt để trong Code:
-1.  **Bộ lọc tỷ giá thông minh 3 lớp:**
-    - **Lớp 1 (Nhân 1000):** Tự động phát hiện tỷ giá bị thiếu 3 chữ số thập phân (`rate < 1000.0`) và nhân với `1000.0` (ví dụ: `21.0` -> `21000.0`).
-    - **Lớp 2 (Phát hiện dị biệt):** Đánh dấu các giá trị nằm ngoài biên độ hợp lý của tỷ giá USD/VND lịch sử là `NaN`. Tỷ giá lịch sử 15 năm qua luôn nằm trong khoảng `[15000.0, 28000.0]`.
-    - **Lớp 3 (Điền khuyết tự động):** Áp dụng `.ffill()` và `.bfill()` để lấp đầy các ô `NaN` bằng tỷ giá hợp lệ của ngày giao dịch liền trước hoặc liền sau.
-2.  **Chuyển đổi Scaler:** Sử dụng `StandardScaler` thay thế cho `MinMaxScaler` giúp mô hình ổn định trọng số và hoàn toàn không bị ảnh hưởng bởi các giá trị ngoại lai (outliers) còn sót lại.
+$$\text{Khoảng giá an toàn} = \text{Giá dự báo} \pm 1.5 \times \text{ATR}_{14}$$
+
+**Phân loại mức độ rủi ro:**
+
+| Mức | Điều kiện | Ý nghĩa |
+|---|---|---|
+| Thấp | Biến động < 1.5% | Thị trường ổn định |
+| Trung bình | 1.5% – 3.0% | Cần thận trọng |
+| Cao | > 3.0% | Rủi ro cao, hạn chế giao dịch |
 
 ---
 
-## 🏆 8. BẢNG KẾT QUẢ ĐÁNH GIÁ SAI SỐ THỰC TẾ (MODEL EVALUATION)
+## 8. Xử lý nhiễu tỷ giá USD/VND
 
-Dưới đây là kết quả sai số thực tế đo bằng tiền mặt tuyệt đối (MAE) và phần trăm sai lệch (MAPE) trên tập kiểm thử (Test Set) độc lập sau khi **tích hợp phân tích cảm xúc tin tức toàn cầu (Global Sentiment Features)**, áp dụng bộ lọc tỷ giá và StandardScaler:
+Nguồn Yahoo Finance (`USDVND=X`) có lỗi dữ liệu nghiêm trọng tại một số phiên lịch sử — tỷ giá bị ghi nhận sai lệch hàng nghìn lần (ví dụ: 3.210 thay vì 21.000), tạo ra biến động ảo lên tới +562% trong một ngày.
 
-### 🇻🇳 Vinamilk (VNM.VN) - Đơn vị: VNĐ
-*   🌳 **XGBoost (Đồng đều cực tốt):**
-    - *Sai số MAE:* **219,57 VNĐ** (Lệch trung bình: **0.37%**) 🟢
-*   🤖 **Transformer:**
-    - *Sai số MAE:* **220,59 VNĐ** (Lệch trung bình: **0.37%**) 🟢
+Hệ thống áp dụng **bộ lọc 3 lớp**:
+1. **Phát hiện thiếu bậc:** Nếu `rate < 1000`, nhân với `1000` (ví dụ: 21.0 → 21000).
+2. **Loại bỏ dị biệt:** Đánh dấu `NaN` cho giá trị nằm ngoài khoảng `[15000, 28000]` — biên độ lịch sử 15 năm.
+3. **Điền khuyết:** Áp dụng `.ffill()` và `.bfill()` lấp đầy `NaN` bằng giá trị hợp lệ gần nhất.
 
-### 🇺🇸 Alphabet / Google (GOOGL) - Đơn vị: VNĐ & USD
-*   🌳 **XGBoost (Tối ưu xuất sắc):**
-    - *Sai số MAE:* **40.760,08 VNĐ** (~$1.60 USD - Lệch trung bình: **0.84%**) 🟢
-*   🤖 **Transformer:**
-    - *Sai số MAE:* **43.222,86 VNĐ** (~$1.70 USD - Lệch trung bình: **0.89%**) 🟢
-
-### 🇺🇸 Meta Platforms (META) - Đơn vị: VNĐ & USD
-*   🌳 **XGBoost:**
-    - *Sai số MAE:* **190.992,80 VNĐ** (~$7.52 USD - Lệch trung bình: **1.31%**) 🟢
-*   🤖 **Transformer (Ưu việt vượt trội):**
-    - *Sai số MAE:* **156.554,49 VNĐ** (~$6.16 USD - Lệch trung bình: **1.08%**) 🟢
-
-> [!IMPORTANT]
-> Toàn bộ các mô hình dự báo đều duy trì tỷ lệ sai lệch trung bình **quanh mốc ~1%** (đặc biệt là VNM.VN và GOOGL đạt **dưới 0.9%**). Việc tích hợp thêm tin tức tài chính giúp mô hình nắm bắt tốt hơn các biến động đột ngột hoặc các khoảng trống giá mở cửa (opening gaps) do tin tức vĩ mô gây ra.
+Kết hợp với StandardScaler, mô hình hoàn toàn không bị ảnh hưởng bởi outliers còn sót lại.
 
 ---
 
-## 🛠️ 9. HƯỚNG DẪN CÀI ĐẶT VÀ CHẠY PIPELINE TRÊN TERMINAL
+## 9. Kết quả đánh giá
 
-### Bước 1: Kích hoạt Môi trường ảo (Khuyên dùng)
-Đảm bảo bạn đã cài đặt Python 3.8 trở lên. Mở Terminal tại thư mục gốc dự án và chạy:
+Sai số trên tập kiểm thử (Test Set) độc lập, sau khi tích hợp đầy đủ các đặc trưng vĩ mô và cảm xúc tin tức:
+
+### Vinamilk (VNM.VN)
+
+| Mô hình | MAE (VND) | MAPE |
+|---|---|---|
+| XGBoost | 219,57 | 0.37% |
+| Transformer | 220,59 | 0.37% |
+
+### Alphabet (GOOGL)
+
+| Mô hình | MAE (VND) | MAE (USD) | MAPE |
+|---|---|---|---|
+| XGBoost | 40.760,08 | ~$1.60 | 0.84% |
+| Transformer | 43.222,86 | ~$1.70 | 0.89% |
+
+### Meta Platforms (META)
+
+| Mô hình | MAE (VND) | MAE (USD) | MAPE |
+|---|---|---|---|
+| XGBoost | 190.992,80 | ~$7.52 | 1.31% |
+| Transformer | 156.554,49 | ~$6.16 | 1.08% |
+
+Toàn bộ các mô hình đều duy trì sai lệch trung bình quanh mốc ~1%. VNM.VN và GOOGL đạt dưới 0.9%.
+
+---
+
+## 10. Hướng dẫn cài đặt và chạy
+
+### Yêu cầu
+
+- Python 3.10 trở lên
+- Hệ điều hành: Windows (đã kiểm thử), Linux/macOS (tương thích)
+
+### Cài đặt
+
 ```powershell
-# Tạo môi trường ảo
+# Tạo và kích hoạt môi trường ảo
 python -m venv .venv
-
-# Kích hoạt trên Windows:
 .venv\Scripts\activate
-```
 
-### Bước 2: Cài đặt thư viện bắt buộc (Bao gồm PyTorch & Transformers)
-```powershell
+# Cài đặt thư viện
 pip install -r requirements.txt
 ```
 
-### Bước 3: Chạy Pipeline tự động
-Lệnh duy nhất để tự động thực hiện tải dữ liệu, thu thập tin tức, phân tích cảm xúc (FinBERT/VADER), lọc nhiễu tỷ giá, trích xuất đặc trưng, huấn luyện tối ưu hóa cả hai mô hình và đưa ra dự báo giá mở cửa kèm khoảng an toàn:
+### Chạy pipeline huấn luyện và dự báo
+
 ```powershell
-python main.py
+# Huấn luyện đầy đủ pipeline (tải dữ liệu, xử lý đặc trưng, huấn luyện, dự báo)
+python scripts/run_pipeline.py
+
+# Huấn luyện riêng mô hình Hybrid Stacking
+python scripts/run_training.py
+
+# Tối ưu siêu tham số bằng Optuna (cho 1 mã cụ thể)
+python scripts/run_tuning.py VNM.VN
+
+# Chạy backtest mô phỏng giao dịch
+python scripts/run_backtest.py VNM.VN
 ```
 
-> [!NOTE]
-> * **Tải mô hình FinBERT:** Trong lần đầu tiên chạy, hệ thống sẽ tự động tải các tệp trọng số của mô hình **ProsusAI/finbert** từ HuggingFace Hub (~400MB) và lưu vào bộ nhớ cache nội bộ.
-> * **Thu thập tin tức đa ngôn ngữ:** Hệ thống tự động thu thập tin tức từ yfinance (quốc tế) và CafeF RSS (tiếng Việt cho VNM.VN), dịch toàn bộ sang tiếng Anh theo cụm (batch translation) bằng `deep-translator` để đảm bảo phân tích cảm xúc chính xác nhất với tốc độ tối đa.
+### Chạy web server
 
-*Các biểu đồ so sánh xu hướng dự báo thực tế được lưu vào thư mục `results/`.*
-*Để dọn dẹp các tệp rác phát sinh sau khi huấn luyện, bạn có thể chạy:*
 ```powershell
-python clean_workspace.py
+python src/web_runner/run_web.py
+# Truy cập http://127.0.0.1:8000/
 ```
+
+### Ghi chú
+
+- Lần chạy đầu tiên sẽ tải trọng số FinBERT (~400MB) từ HuggingFace Hub.
+- Tin tức tiếng Việt (CafeF RSS) được dịch sang tiếng Anh qua `deep-translator` trước khi phân tích cảm xúc.
+- Biểu đồ kết quả lưu tại `reports/figures/`.
+- Lịch sử dự báo lưu tại `logs/predictions_history.txt`.
+
+---
+
+## License
+
+MIT License — xem file [LICENSE](LICENSE) để biết chi tiết.

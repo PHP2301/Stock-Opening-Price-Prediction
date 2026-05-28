@@ -47,6 +47,62 @@ def get_realtime_usd_vnd_rate():
     # Fallback mặc định nếu mất kết nối mạng hoàn toàn
     return 25400.0
 
+def log_feature_correlation_comparison(df, ticker):
+    """
+    Tính toán và in ra hệ số tương quan Pearson giữa các đặc trưng kỹ thuật với target_return
+    trước và sau khi áp dụng Kalman Filter để xác định mức độ cải thiện tín hiệu.
+    """
+    raw_close = df['close']
+    smoothed_close = df['close_smoothed']
+    target_return = df['target_return']
+    
+    # Danh sách các chỉ báo cần tính toán và so sánh tương quan
+    indicators = [
+        ('RSI_14', lambda p: ta.rsi(p, length=14)),
+        ('MACD', lambda p: ta.macd(p, fast=12, slow=26, signal=9).iloc[:, 0] if ta.macd(p, fast=12, slow=26, signal=9) is not None else None),
+        ('Volatility_20', lambda p: p.pct_change().rolling(window=20).std()),
+        ('EMA_14', lambda p: ta.ema(p, length=14)),
+        ('ROC_10', lambda p: ta.roc(p, length=10)),
+        ('Lag_1', lambda p: p.shift(1)),
+        ('Lag_2', lambda p: p.shift(2)),
+        ('Lag_3', lambda p: p.shift(3))
+    ]
+    
+    print("\n=================================================================================")
+    print(f"📊 PHÂN TÍCH TƯƠNG QUAN ĐẶC TRƯNG VỚI TARGET (TICKER: {ticker})")
+    print(f"   (So sánh trước vs sau khi áp dụng Kalman Filter để làm mịn giá)")
+    print("=================================================================================")
+    print(f" {'Tên đặc trưng':<18} | {'Tương quan Thô':<16} | {'Tương quan Kalman':<18} | {'Tăng/Giảm hiệu suất':<20}")
+    print("-" * 81)
+    
+    for name, func in indicators:
+        try:
+            feat_raw = func(raw_close)
+            feat_smooth = func(smoothed_close)
+            if feat_raw is None or feat_smooth is None:
+                continue
+            
+            temp_df = pd.DataFrame({
+                'raw': feat_raw,
+                'smooth': feat_smooth,
+                'target': target_return
+            }).dropna()
+            
+            corr_raw = temp_df['raw'].corr(temp_df['target'])
+            corr_smooth = temp_df['smooth'].corr(temp_df['target'])
+            
+            # Cải thiện là khi tương quan trị tuyệt đối tăng lên (tín hiệu mạnh hơn)
+            diff = abs(corr_smooth) - abs(corr_raw)
+            if np.isnan(diff):
+                diff_str = "N/A"
+            else:
+                diff_str = f"{diff:+.6f} ({'Cải thiện' if diff > 0 else 'Giảm tín hiệu'})"
+            
+            print(f" {name:<18} | {corr_raw:>16.6f} | {corr_smooth:>18.6f} | {diff_str:<20}")
+        except Exception as e:
+            print(f" {name:<18} | Lỗi tính toán: {e}")
+    print("=================================================================================\n")
+
 def fetch_and_prepare_data(ticker: str, start_date: str = "2015-01-01", end_date: str = "2026-05-20", sentiment_engine: str = 'vader'):
     """
     Workflow Bước 1 & 2:
@@ -60,7 +116,7 @@ def fetch_and_prepare_data(ticker: str, start_date: str = "2015-01-01", end_date
     
     # Tu dong xac dinh duong dan file truong cung cap
     base_ticker = ticker.split('.')[0]
-    school_data_path = os.path.join(data_dir, f"{base_ticker}_prices.csv")
+    school_data_path = os.path.join(data_dir, "raw", f"{base_ticker}_prices.csv")
     price_cols = ['open', 'high', 'low', 'close']
 
     # Tải tỷ giá USD/VND động trực tuyến từ Yahoo Finance
@@ -385,6 +441,12 @@ def fetch_and_prepare_data(ticker: str, start_date: str = "2015-01-01", end_date
 
     # Biến mục tiêu: tỷ suất lợi nhuận mở cửa ngày mai so với đóng cửa hôm nay
     df['target_return']   = (df['open'].shift(-1) - df['close']) / df['close']
+
+    # Log phân tích tương quan đặc trưng trước và sau khi làm mịn Kalman
+    try:
+        log_feature_correlation_comparison(df, ticker)
+    except Exception as e:
+        print(f"  [WARNING] Không thể chạy phân tích tương quan Kalman: {e}")
 
     df_cleaned = df.dropna().reset_index(drop=True)
 
