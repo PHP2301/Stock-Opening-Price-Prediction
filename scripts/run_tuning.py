@@ -98,7 +98,7 @@ if __name__ == "__main__":
         
         # Tạo đặc trưng dừng
         transformer = DataTransformer(time_steps=45)
-        X_scaled, y_scaled, _ = transformer.fit_transform_data(df)
+        X_scaled, y_scaled, _ = transformer.fit_transform_train_only(df, train_ratio=0.8)
         X_3D, y_3D, _ = transformer.create_sliding_windows(X_scaled, y_scaled)
         
         # Tách 80/20 train/test

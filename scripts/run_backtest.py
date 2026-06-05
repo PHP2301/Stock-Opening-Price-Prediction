@@ -98,7 +98,7 @@ def run_simulation(df_test, X_test, y_test_raw, transformer, xgb_model, transfor
     
     # Khớp dữ liệu
     close_today = df_test['close'].values[:len(X_test)]
-    open_tomorrow = df_test['open'].shift(-1).values[:len(X_test)]
+    open_tomorrow = df_test['open'].shift(-1).ffill().bfill().values[:len(X_test)]
     dates = df_test['date'].values[:len(X_test)]
     
     # Khởi tạo giả lập vốn
@@ -245,7 +245,7 @@ def main():
         
         # Tiền xử lý
         transformer = DataTransformer(time_steps=45)
-        X_scaled, y_scaled, y_spread_scaled = transformer.fit_transform_data(df)
+        X_scaled, y_scaled, y_spread_scaled = transformer.fit_transform_train_only(df, train_ratio=0.8)
         X_3D, y_3D, y_spread_3D = transformer.create_sliding_windows(X_scaled, y_scaled, y_spread_scaled)
         
         # Tách 80/20 train/test kết hợp Purge Gap 45 phiên

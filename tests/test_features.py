@@ -21,6 +21,7 @@ class TestFeatures(unittest.TestCase):
             "high": np.random.uniform(60000, 65000, n_samples),
             "low": np.random.uniform(45000, 50000, n_samples),
             "close": np.random.uniform(50000, 60000, n_samples),
+            "close_smoothed": np.random.uniform(50000, 60000, n_samples),
             "volume": np.random.uniform(100000, 1000000, n_samples),
             "vix": np.random.uniform(10, 30, n_samples),
             "bond_yield_10y": np.random.uniform(2.0, 5.0, n_samples),
@@ -63,6 +64,18 @@ class TestFeatures(unittest.TestCase):
         self.assertEqual(X_3d.shape, (expected_n, self.transformer.time_steps, 34))
         self.assertEqual(y_3d.shape, (expected_n, 1))
         self.assertEqual(ys_3d.shape, (expected_n, 1))
+
+    def test_fit_transform_train_only(self):
+        """Kiểm tra việc chuẩn hóa chỉ dùng phân phối của tập Train (không Leak)"""
+        # Điền khuyết NaN/inf để sẵn sàng transform_df
+        df_clean = self.df.dropna().copy()
+        X_scaled, y_scaled, y_spread_scaled = self.transformer.fit_transform_train_only(df_clean, train_ratio=0.8)
+        
+        # Verify shapes are correct
+        n_samples = len(df_clean)
+        self.assertEqual(X_scaled.shape, (n_samples, len(self.transformer.feature_cols)))
+        self.assertEqual(y_scaled.shape, (n_samples, 1))
+        self.assertEqual(y_spread_scaled.shape, (n_samples, 1))
 
 if __name__ == '__main__':
     unittest.main()

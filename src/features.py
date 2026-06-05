@@ -151,6 +151,39 @@ class DataTransformer:
             
         return X_scaled, y_scaled, y_spread_scaled
 
+    def fit_transform_train_only(self, df: pd.DataFrame, train_ratio: float = 0.8, purge_gap: int = 45):
+        """
+        Huấn luyện bộ chuẩn hóa (fit) CHỈ trên dữ liệu Train và áp dụng (transform) cho toàn bộ dữ liệu.
+        Tránh rò rỉ dữ liệu (Data Leakage) từ tập Test sang tập Train.
+        """
+        # Trích xuất đặc trưng dừng
+        df_feats = self.transform_df(df)
+        
+        # Xác định điểm phân chia (split_idx) tương tự như trong split_train_test_chronological
+        total_windows = len(df_feats) - self.time_steps
+        split_idx_window = int(total_windows * train_ratio)
+        split_idx_raw = split_idx_window + self.time_steps
+        
+        X_raw = df_feats.values
+        y_raw = df[[self.target_col]].values
+        
+        # Fit bộ chuẩn hóa chỉ trên tập Train (trước split_idx_raw)
+        self.feature_scaler.fit(X_raw[:split_idx_raw])
+        self.target_scaler.fit(y_raw[:split_idx_raw])
+        
+        # Transform toàn bộ dữ liệu
+        X_scaled = self.feature_scaler.transform(X_raw)
+        y_scaled = self.target_scaler.transform(y_raw)
+        
+        y_spread_scaled = None
+        if self.spread_col in df.columns:
+            y_spread_raw = df[[self.spread_col]].values
+            self.spread_scaler.fit(y_spread_raw[:split_idx_raw])
+            y_spread_scaled = self.spread_scaler.transform(y_spread_raw)
+            
+        return X_scaled, y_scaled, y_spread_scaled
+
+
 
     def create_sliding_windows(self, X_scaled: np.ndarray, y_scaled: np.ndarray, y_spread_scaled: np.ndarray = None):
         """

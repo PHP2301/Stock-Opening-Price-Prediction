@@ -121,7 +121,6 @@ def main():
     
     callbacks = [
         EarlyStopping(monitor='val_loss', patience=25, restore_best_weights=True, verbose=0),
-        ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=7, min_lr=1e-6, verbose=0),
         LearningRateScheduler(cosine_decay, verbose=0)
     ]
     
@@ -136,7 +135,7 @@ def main():
         df = fetch_and_prepare_data(ticker, start_date=START_TRAIN, end_date=END_PREDICT, sentiment_engine=SENTIMENT_ENGINE)
         
         transformer = DataTransformer(time_steps=LOOKBACK_WINDOW)
-        X_scaled, y_scaled, y_spread_scaled = transformer.fit_transform_data(df)
+        X_scaled, y_scaled, y_spread_scaled = transformer.fit_transform_train_only(df, train_ratio=0.8)
         X_3D, y_3D, y_spread_3D = transformer.create_sliding_windows(X_scaled, y_scaled, y_spread_scaled)
         
         # Chia tập dữ liệu 80/20 theo thời gian

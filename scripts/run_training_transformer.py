@@ -72,10 +72,9 @@ def main():
     START_TRAIN = "2010-01-01"
     END_PREDICT = "2026-05-20"
     
-    # Cấu hình callbacks cho mạng Neural (sử dụng Cosine Decay và Plateau Decay điều phối học tập)
+    # Cấu hình callbacks cho mạng Neural (sử dụng Cosine Decay điều phối học tập)
     callbacks = [
         EarlyStopping(monitor='val_loss', patience=25, restore_best_weights=True, verbose=1),
-        ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=7, min_lr=1e-6, verbose=1),
         LearningRateScheduler(cosine_decay, verbose=0)
     ]
     
@@ -90,7 +89,7 @@ def main():
         df = fetch_and_prepare_data(ticker, start_date=START_TRAIN, end_date=END_PREDICT, sentiment_engine=SENTIMENT_ENGINE)
         
         transformer = DataTransformer(time_steps=LOOKBACK_WINDOW)
-        X_scaled, y_scaled, y_spread_scaled = transformer.fit_transform_data(df)
+        X_scaled, y_scaled, y_spread_scaled = transformer.fit_transform_train_only(df, train_ratio=0.8)
         X_3D, y_3D, y_spread_3D = transformer.create_sliding_windows(X_scaled, y_scaled, y_spread_scaled)
         
         # Chia tập dữ liệu 80/20 theo thời gian
@@ -169,7 +168,8 @@ def main():
         # Đánh giá kết quả trên tập kiểm thử (Test set)
         split_idx = int(len(X_3D) * 0.8)
         df_align = df.iloc[transformer.time_steps:].reset_index(drop=True)
-        test_close_i = df_align.loc[split_idx:, 'close'].values[:len(X_test_i)]
+        test_start_idx = split_idx + 45
+        test_close_i = df_align.loc[test_start_idx:, 'close'].values[:len(X_test_i)]
         y_test_true_i = test_close_i * (1 + y_test_raw_i)
         
         # Dự báo Transformer
