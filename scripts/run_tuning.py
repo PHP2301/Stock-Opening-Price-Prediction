@@ -50,17 +50,18 @@ def objective(trial):
         d_model=d_model,
         num_heads=num_heads,
         dropout_rate=dropout_rate,
-        learning_rate=learning_rate
+        learning_rate=learning_rate,
+        multi_task=False
     )
     
     # Early stopping để dừng sớm các cấu hình tệ
-    early_stop = EarlyStopping(monitor='val_loss', patience=7, restore_best_weights=True, verbose=0)
+    early_stop = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True, verbose=0)
     
     # Huấn luyện nhanh mô hình (epochs thấp để tối ưu thời gian quét)
     history = model.fit(
         X_train, y_train,
         validation_data=(X_val, y_val),
-        epochs=35,
+        epochs=20,
         batch_size=batch_size,
         callbacks=[early_stop],
         verbose=0
@@ -92,16 +93,16 @@ if __name__ == "__main__":
         print(f"🚀 [OPTUNA] Khởi động Tìm kiếm Siêu tham số cho: {t_ticker}")
         print(f"==================================================")
         
-        # Tải và chuẩn bị dữ liệu
-        df = fetch_and_prepare_data(t_ticker, start_date="2012-01-01", end_date="2026-05-20")
+        # Tải và chuẩn bị dữ liệu (giới hạn từ năm 2022 để có khoảng 1000 ngày gần nhất giúp tối ưu tốc độ và chất lượng)
+        df = fetch_and_prepare_data(t_ticker, start_date="2022-01-01", end_date="2026-05-20")
         
         # Tạo đặc trưng dừng
         transformer = DataTransformer(time_steps=45)
-        X_scaled, y_scaled = transformer.fit_transform_data(df)
-        X_3D, y_3D = transformer.create_sliding_windows(X_scaled, y_scaled)
+        X_scaled, y_scaled, _ = transformer.fit_transform_data(df)
+        X_3D, y_3D, _ = transformer.create_sliding_windows(X_scaled, y_scaled)
         
         # Tách 80/20 train/test
-        X_train_all, y_train_all, _, _, _ = transformer.split_train_test_chronological(df, X_3D, y_3D, train_ratio=0.8)
+        X_train_all, y_train_all, _, _, _, _, _ = transformer.split_train_test_chronological(df, X_3D, y_3D, train_ratio=0.8)
         
         # Tách 90/10 train/val phục vụ cho Optuna
         val_size = int(len(X_train_all) * 0.1)
@@ -113,13 +114,13 @@ if __name__ == "__main__":
         y_val = y_train_all[-val_size:]
         
         print(f"📊 Dữ liệu tuning {t_ticker}: Train = {X_train.shape[0]} mẫu, Val = {X_val.shape[0]} mẫu")
-        print(f"⏳ Bắt đầu quét thử nghiệm 15 cấu hình khác nhau...")
+        print(f"⏳ Bắt đầu quét thử nghiệm 25 cấu hình khác nhau...")
         
         # Tắt thông báo rườm rà của Optuna để hiển thị gọn gàng hơn
         optuna.logging.set_verbosity(optuna.logging.WARNING)
         
         study = optuna.create_study(direction='minimize')
-        study.optimize(objective, n_trials=15)
+        study.optimize(objective, n_trials=25)
         
         print(f"\n🏆 KẾT QUẢ TỐI ƯU HÓA HOÀN TẤT CHO {t_ticker}!")
         print(f"🥇 Cấu hình tốt nhất đạt Val Loss = {study.best_value:.6f}")

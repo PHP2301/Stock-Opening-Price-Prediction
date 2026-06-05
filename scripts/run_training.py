@@ -1,3 +1,4 @@
+import datetime
 import os
 import random
 import sys
@@ -13,6 +14,9 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, LearningRateScheduler
 from tensorflow.keras.models import Model
+os.environ.setdefault('TF_XLA_FLAGS', '--tf_xla_auto_jit=2')
+os.environ.setdefault('TF_ENABLE_ONEDNN_OPTS', '1')
+# Enable XLA JIT for CPU training
 import tensorflow as tf
 import math
 import joblib
@@ -104,6 +108,14 @@ def main():
     
     SENTIMENT_ENGINE = 'finbert'
     TICKERS = ["VNM.VN", "GOOGL", "META"]
+    
+    # Cho phép chọn ticker cụ thể qua command line
+    if len(sys.argv) > 1:
+        arg = sys.argv[1].upper()
+        if arg in [t.upper() for t in TICKERS]:
+            TICKERS = [t for t in TICKERS if t.upper() == arg]
+            print(f"🎯 Chỉ chạy huấn luyện cho mã: {TICKERS[0]}")
+
     START_TRAIN = "2010-01-01"
     END_PREDICT = "2026-05-20"
     
@@ -124,20 +136,24 @@ def main():
         df = fetch_and_prepare_data(ticker, start_date=START_TRAIN, end_date=END_PREDICT, sentiment_engine=SENTIMENT_ENGINE)
         
         transformer = DataTransformer(time_steps=LOOKBACK_WINDOW)
-        X_scaled, y_scaled = transformer.fit_transform_data(df)
-        X_3D, y_3D = transformer.create_sliding_windows(X_scaled, y_scaled)
+        X_scaled, y_scaled, y_spread_scaled = transformer.fit_transform_data(df)
+        X_3D, y_3D, y_spread_3D = transformer.create_sliding_windows(X_scaled, y_scaled, y_spread_scaled)
         
         # Chia tập dữ liệu 80/20 theo thời gian
-        X_train_i, y_train_i, X_test_i, y_test_i, y_test_raw_i = transformer.split_train_test_chronological(df, X_3D, y_3D, train_ratio=0.8)
+        X_train_i, y_train_i, X_test_i, y_test_i, y_test_raw_i, y_train_spread_i, y_test_spread_i = transformer.split_train_test_chronological(df, X_3D, y_3D, y_spread_3D, train_ratio=0.8)
         
         # Tạo tập validation nhỏ 10% từ tập train phục vụ cho việc theo dõi khớp mạng Neural
         val_size = int(len(X_train_i) * 0.1)
         if val_size > 0:
             X_tr, y_tr = X_train_i[:-val_size], y_train_i[:-val_size]
             X_va, y_va = X_train_i[-val_size:], y_train_i[-val_size:]
+            y_tr_spread = y_train_spread_i[:-val_size]
+            y_va_spread = y_train_spread_i[-val_size:]
         else:
             X_tr, y_tr = X_train_i, y_train_i
             X_va, y_va = X_test_i, y_test_i
+            y_tr_spread = y_train_spread_i
+            y_va_spread = y_test_spread_i
         
         # Load best transformer parameters for the specific ticker if they exist
         best_params_ticker_path = os.path.join(ROOT_DIR, 'config', f'best_transformer_params_{ticker}.json')
@@ -166,8 +182,54 @@ def main():
             except Exception as e:
                 print(f"⚠️ Không thể đọc {chosen_params_path}: {e}")
         
-        # 1. HUẤN LUYỆN TRANSFORMER (GIAI ĐOẠN 1)
-        print(f"🤖 [TRAIN] Đang huấn luyện Transformer gốc cho riêng {ticker}...")
+        # 1. HUẤN LUYỆN CHÉO K-FOLD ĐỂ TRÍCH XUẤT OUT-OF-FOLD (OOF) EMBEDDINGS CHO XGBOOST
+        print(f"🤖 [TRAIN] Đang tiến hành K-Fold Cross-Validation (K=5) để tạo đặc trưng OOF cho XGBoost...")
+        from sklearn.model_selection import KFold
+        kf = KFold(n_splits=5, shuffle=False)
+        
+        X_train_latent_oof = np.zeros((len(X_train_i), 32))
+        
+        fold = 1
+        for train_idx, val_idx in kf.split(X_train_i):
+            print(f"   - Huấn luyện chéo Fold {fold}/5...")
+            X_tr_fold, y_tr_fold = X_train_i[train_idx], y_train_i[train_idx]
+            X_va_fold, y_va_fold = X_train_i[val_idx], y_train_i[val_idx]
+            
+            y_tr_spread_fold = y_train_spread_i[train_idx]
+            y_va_spread_fold = y_train_spread_i[val_idx]
+            
+            fold_model = build_transformer(
+                input_shape=(X_train_i.shape[1], X_train_i.shape[2]),
+                d_model=d_model,
+                num_heads=num_heads,
+                dropout_rate=dropout_rate,
+                learning_rate=learning_rate
+            )
+            
+            fold_callbacks = [
+                EarlyStopping(monitor='val_loss', patience=8, restore_best_weights=True, verbose=0),
+                ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=4, min_lr=1e-6, verbose=0)
+            ]
+            
+            fold_model.fit(
+                X_tr_fold, 
+                {"output_return": y_tr_fold, "output_spread": y_tr_spread_fold},
+                validation_data=(
+                    X_va_fold, 
+                    {"output_return": y_va_fold, "output_spread": y_va_spread_fold}
+                ),
+                epochs=35,
+                batch_size=batch_size,
+                callbacks=fold_callbacks,
+                verbose=0
+            )
+            
+            fold_extractor = Model(inputs=fold_model.input, outputs=fold_model.get_layer("latent_embedding").output)
+            X_train_latent_oof[val_idx] = fold_extractor.predict(X_va_fold, verbose=0)
+            fold += 1
+
+        # Huấn luyện mô hình Transformer chính (lưu trữ & dự báo live)
+        print(f"🤖 [TRAIN] Đang huấn luyện Transformer chính cho riêng {ticker}...")
         transformer_model = build_transformer(
             input_shape=(X_tr.shape[1], X_tr.shape[2]),
             d_model=d_model,
@@ -176,39 +238,33 @@ def main():
             learning_rate=learning_rate
         )
         transformer_model.fit(
-            X_tr, y_tr,
-            validation_data=(X_va, y_va),
+            X_tr, 
+            {"output_return": y_tr, "output_spread": y_tr_spread},
+            validation_data=(
+                X_va, 
+                {"output_return": y_va, "output_spread": y_va_spread}
+            ),
             epochs=100,
             batch_size=batch_size,
             callbacks=callbacks,
             verbose=0
         )
         
-        # Thiết lập mô hình trích xuất đặc trưng ẩn từ lớp áp chót Dense(32)
-        print(f"🔍 [FEATURE EXTRACTION] Thiết lập bộ trích xuất đặc trưng ẩn (Embedding) từ Transformer...")
+        # Thiết lập mô hình trích xuất đặc trưng chính
+        print(f"🔍 [FEATURE EXTRACTION] Thiết lập bộ trích xuất đặc trưng ẩn chính...")
         feature_extractor = Model(
             inputs=transformer_model.input,
-            outputs=transformer_model.layers[-2].output
+            outputs=transformer_model.get_layer("latent_embedding").output
         )
         
-        # Trích xuất đặc trưng ẩn từ tập train và tập val
-        X_tr_latent = feature_extractor.predict(X_tr, verbose=0)
-        X_va_latent = feature_extractor.predict(X_va, verbose=0)
-        
-        # Lấy các chỉ báo kỹ thuật của ngày hiện tại (phiên thứ 45 trong sliding window)
-        X_tr_today = X_tr[:, -1, :]
-        X_va_today = X_va[:, -1, :]
-        
-        # Ghép nối (Concat) đặc trưng ẩn (32 chiều) với các đặc trưng gốc của ngày hiện tại (24 chiều)
-        # Tạo ra tập dữ liệu phẳng lai (56 chiều)
-        X_tr_hybrid = np.concatenate([X_tr_latent, X_tr_today], axis=1)
-        X_va_hybrid = np.concatenate([X_va_latent, X_va_today], axis=1)
+        # Lấy các chỉ báo kỹ thuật gốc ngày hiện tại cho toàn bộ tập Train
+        X_train_today_all = X_train_i[:, -1, :]
+        X_train_hybrid_all = np.concatenate([X_train_latent_oof, X_train_today_all], axis=1)
         
         # 2. HUẤN LUYỆN XGBOOST LAI (GIAI ĐOẠN 2)
-        # Sử dụng 10% dữ liệu holdout (X_va_hybrid, y_va) mà Transformer chưa từng được học trực tiếp
-        # để huấn luyện XGBoost. Phương pháp Stacking này giúp chống Overfitting chéo cực kỳ hiệu quả.
-        print(f"🌳 [TRAIN] Đang huấn luyện mô hình lai XGBoost trên 10% dữ liệu holdout (học trên 56 đặc trưng kết hợp)...")
-        xgb_model = build_xgboost_optimized(X_va_hybrid, y_va)
+        # Sử dụng 100% dữ liệu Train thô kết hợp đặc trưng OOF không rò rỉ dữ liệu để huấn luyện XGBoost
+        print(f"🌳 [TRAIN] Đang huấn luyện mô hình lai XGBoost trên 100% dữ liệu OOF Train ({len(X_train_hybrid_all)} mẫu)...")
+        xgb_model = build_xgboost_optimized(X_train_hybrid_all, y_train_i)
 
 
         
@@ -229,7 +285,8 @@ def main():
         hybrid_xgb_preds = test_close_i * (1 + hybrid_xgb_return)
         
         # Dự báo Transformer gốc
-        trans_scaled = transformer_model.predict(X_test_i, verbose=0)
+        trans_preds_output = transformer_model.predict(X_test_i, verbose=0)
+        trans_scaled = trans_preds_output[0] if isinstance(trans_preds_output, list) else trans_preds_output
         trans_return = transformer.target_scaler.inverse_transform(trans_scaled).ravel()
         trans_preds = test_close_i * (1 + trans_return)
         
@@ -486,8 +543,8 @@ def main():
                 xgb_pred_scaled = xgb_model.predict(X_predict_hybrid).reshape(-1, 1)
                 xgb_return_future = transformer.target_scaler.inverse_transform(xgb_pred_scaled)[0][0]
                 
-                # Dự báo từ Transformer gốc
-                trans_pred_scaled = transformer_model.predict(X_predict, verbose=0)
+                trans_pred_output = transformer_model.predict(X_predict, verbose=0)
+                trans_pred_scaled = trans_pred_output[0] if isinstance(trans_pred_output, list) else trans_pred_output
                 trans_return_future = transformer.target_scaler.inverse_transform(trans_pred_scaled)[0][0]
                 
                 last_close = raw_df['close'].iloc[-1]

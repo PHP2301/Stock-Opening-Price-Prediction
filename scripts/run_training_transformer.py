@@ -90,20 +90,24 @@ def main():
         df = fetch_and_prepare_data(ticker, start_date=START_TRAIN, end_date=END_PREDICT, sentiment_engine=SENTIMENT_ENGINE)
         
         transformer = DataTransformer(time_steps=LOOKBACK_WINDOW)
-        X_scaled, y_scaled = transformer.fit_transform_data(df)
-        X_3D, y_3D = transformer.create_sliding_windows(X_scaled, y_scaled)
+        X_scaled, y_scaled, y_spread_scaled = transformer.fit_transform_data(df)
+        X_3D, y_3D, y_spread_3D = transformer.create_sliding_windows(X_scaled, y_scaled, y_spread_scaled)
         
         # Chia tập dữ liệu 80/20 theo thời gian
-        X_train_i, y_train_i, X_test_i, y_test_i, y_test_raw_i = transformer.split_train_test_chronological(df, X_3D, y_3D, train_ratio=0.8)
+        X_train_i, y_train_i, X_test_i, y_test_i, y_test_raw_i, y_train_spread_i, y_test_spread_i = transformer.split_train_test_chronological(df, X_3D, y_3D, y_spread_3D, train_ratio=0.8)
         
         # Tạo tập validation nhỏ 10% từ tập train phục vụ cho việc theo dõi khớp mạng Neural
         val_size = int(len(X_train_i) * 0.1)
         if val_size > 0:
             X_tr, y_tr = X_train_i[:-val_size], y_train_i[:-val_size]
             X_va, y_va = X_train_i[-val_size:], y_train_i[-val_size:]
+            y_tr_spread = y_train_spread_i[:-val_size]
+            y_va_spread = y_train_spread_i[-val_size:]
         else:
             X_tr, y_tr = X_train_i, y_train_i
             X_va, y_va = X_test_i, y_test_i
+            y_tr_spread = y_train_spread_i
+            y_va_spread = y_test_spread_i
         
         print(f"📊 Thông tin tập dữ liệu cho {ticker}:")
         print(f"   🔹 Train (Huấn luyện): {len(X_tr)} mẫu")
@@ -149,8 +153,12 @@ def main():
         )
         
         history = transformer_model.fit(
-            X_tr, y_tr,
-            validation_data=(X_va, y_va),
+            X_tr, 
+            {"output_return": y_tr, "output_spread": y_tr_spread},
+            validation_data=(
+                X_va, 
+                {"output_return": y_va, "output_spread": y_va_spread}
+            ),
             epochs=100,
             batch_size=batch_size,
             callbacks=callbacks,
@@ -165,7 +173,8 @@ def main():
         y_test_true_i = test_close_i * (1 + y_test_raw_i)
         
         # Dự báo Transformer
-        trans_scaled = transformer_model.predict(X_test_i, verbose=0)
+        trans_preds_output = transformer_model.predict(X_test_i, verbose=0)
+        trans_scaled = trans_preds_output[0] if isinstance(trans_preds_output, list) else trans_preds_output
         trans_return = transformer.target_scaler.inverse_transform(trans_scaled).ravel()
         trans_preds = test_close_i * (1 + trans_return)
         

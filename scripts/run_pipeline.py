@@ -137,11 +137,11 @@ def main():
             df = fetch_and_prepare_data(ticker, start_date=START_TRAIN, end_date=END_PREDICT, sentiment_engine=SENTIMENT_ENGINE)
             
             transformer = DataTransformer(time_steps=LOOKBACK_WINDOW)
-            X_scaled, y_scaled = transformer.fit_transform_data(df)
-            X_3D, y_3D = transformer.create_sliding_windows(X_scaled, y_scaled)
+            X_scaled, y_scaled, _ = transformer.fit_transform_data(df)
+            X_3D, y_3D, _ = transformer.create_sliding_windows(X_scaled, y_scaled)
             
             # Chia tập dữ liệu 80/20 theo thời gian
-            X_train_i, y_train_i, X_test_i, y_test_i, y_test_raw_i = transformer.split_train_test_chronological(df, X_3D, y_3D, train_ratio=0.8)
+            X_train_i, y_train_i, X_test_i, y_test_i, y_test_raw_i, _, _ = transformer.split_train_test_chronological(df, X_3D, y_3D, train_ratio=0.8)
             
             # Tạo tập validation nhỏ 10% từ tập train phục vụ cho việc theo dõi khớp mạng Neural
             val_size = int(len(X_train_i) * 0.1)
@@ -159,7 +159,7 @@ def main():
             
             # 2. Huấn luyện Transformer
             print(f"🤖 [TRAIN] Đang huấn luyện Transformer cho riêng {ticker}...")
-            transformer_model = build_transformer(input_shape=(X_tr.shape[1], X_tr.shape[2]))
+            transformer_model = build_transformer(input_shape=(X_tr.shape[1], X_tr.shape[2]), multi_task=False)
             transformer_model.fit(
                 X_tr, y_tr,
                 validation_data=(X_va, y_va),
@@ -441,10 +441,10 @@ def main():
             print(f"🔄 Đang chuẩn bị dữ liệu (VNĐ) cho mã: {ticker}...")
             df = fetch_and_prepare_data(ticker, start_date=START_TRAIN, end_date=END_PREDICT, sentiment_engine=SENTIMENT_ENGINE)
             transformer = DataTransformer(time_steps=LOOKBACK_WINDOW)
-            X_scaled, y_scaled = transformer.fit_transform_data(df)
-            X_3D, y_3D = transformer.create_sliding_windows(X_scaled, y_scaled)
+            X_scaled, y_scaled, _ = transformer.fit_transform_data(df)
+            X_3D, y_3D, _ = transformer.create_sliding_windows(X_scaled, y_scaled)
             
-            X_train_i, y_train_i, X_test_i, y_test_i, y_test_raw_i = transformer.split_train_test_chronological(df, X_3D, y_3D, train_ratio=0.8)
+            X_train_i, y_train_i, X_test_i, y_test_i, y_test_raw_i, _, _ = transformer.split_train_test_chronological(df, X_3D, y_3D, train_ratio=0.8)
             X_train_list.append(X_train_i)
             y_train_list.append(y_train_i)
             X_val_list.append(X_test_i)
@@ -480,7 +480,7 @@ def main():
         
         # 2. Huấn luyện Transformer chung
         print("\n🧠 [TRAIN] Đang huấn luyện mạng Deep Learning Transformer chung...")
-        transformer_model = build_transformer(input_shape=(X_train.shape[1], X_train.shape[2]))
+        transformer_model = build_transformer(input_shape=(X_train.shape[1], X_train.shape[2]), multi_task=False)
         transformer_model.fit(X_train, y_train, validation_data=(X_val, y_val), epochs=100, batch_size=64, callbacks=callbacks, verbose=1)
 
         print("\n" + "="*60)

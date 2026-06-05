@@ -9,15 +9,17 @@ Dự án được xây dựng phục vụ nghiên cứu định lượng (quanti
 ## Mục lục
 
 1. [Nguyên lý thiết kế](#1-nguyên-lý-thiết-kế)
-2. [Cấu trúc thư mục](#2-cấu-trúc-thư-mục)
-3. [Luồng xử lý dữ liệu](#3-luồng-xử-lý-dữ-liệu)
-4. [Chi tiết các module](#4-chi-tiết-các-module)
-5. [Kiến trúc mô hình AI](#5-kiến-trúc-mô-hình-ai)
-6. [Hệ thống kiểm thử Backtest](#6-hệ-thống-kiểm-thử-backtest)
-7. [Quản trị rủi ro](#7-quản-trị-rủi-ro)
-8. [Xử lý nhiễu tỷ giá USD/VND](#8-xử-lý-nhiễu-tỷ-giá-usdvnd)
-9. [Kết quả đánh giá](#9-kết-quả-đánh-giá)
-10. [Hướng dẫn cài đặt và chạy](#10-hướng-dẫn-cài-đặt-và-chạy)
+2. [Thuật ngữ & Khái niệm Nghiệp vụ](#2-thuật-ngữ--khái-niệm-nghiệp-vụ)
+3. [Thuật ngữ Công nghệ & Trí tuệ Nhân tạo (AI)](#3-thuật-ngữ-công-nghệ--trí-tuệ-nhân-tạo-ai)
+4. [Cấu trúc thư mục](#4-cấu-trúc-thư-mục)
+5. [Luồng xử lý dữ liệu](#5-luồng-xử-lý-dữ-liệu)
+6. [Chi tiết các module](#6-chi-tiết-các-module)
+7. [Kiến trúc mô hình AI](#7-kiến-trúc-mô-hình-ai)
+8. [Hệ thống kiểm thử Backtest](#8-hệ-thống-kiểm-thử-backtest)
+9. [Quản trị rủi ro](#9-quản-trị-rủi-ro)
+10. [Xử lý nhiễu tỷ giá USD/VND](#10-xử-lý-nhiễu-tỷ-giá-usdvnd)
+11. [Kết quả đánh giá](#11-kết-quả-đánh-giá)
+12. [Hướng dẫn cài đặt và chạy](#12-hướng-dẫn-cài-đặt-và-chạy)
 
 ---
 
@@ -43,7 +45,48 @@ Hệ thống sử dụng StandardScaler (mean=0, std=1) thay cho MinMaxScaler. S
 
 ---
 
-## 2. Cấu trúc thư mục
+## 2. Thuật ngữ & Khái niệm Nghiệp vụ
+
+Để giúp người mới dễ dàng tiếp cận dự án, dưới đây là giải thích ngắn gọn các khái niệm và thuật ngữ chuyên ngành chứng khoán được sử dụng trong hệ thống:
+
+### Khái niệm cơ bản
+*   **Cổ phiếu (Stock):** Chứng chỉ xác nhận quyền sở hữu một phần doanh nghiệp của nhà đầu tư. Dự án này đang hỗ trợ ba mã cổ phiếu lớn đại diện cho Việt Nam và Mỹ.
+*   **Mã chứng khoán (Ticker):** Ký hiệu viết tắt đại diện cho một cổ phiếu trên sàn giao dịch. Ví dụ: `VNM.VN` đại diện cho Vinamilk tại Việt Nam, `GOOGL` đại diện cho Alphabet/Google tại Mỹ.
+*   **Phiên giao dịch:** Khoảng thời gian trong ngày diễn ra mua/bán cổ phiếu trên sàn.
+*   **Phiên ATO (At the Open):** Phiên xác định giá mở cửa lúc bắt đầu ngày giao dịch (ở Việt Nam từ 9h00–9h15). Giá mở cửa của cổ phiếu được quyết định tại phiên này.
+
+### Các Chỉ báo Kỹ thuật chính (Technical Indicators)
+*   **RSI (Relative Strength Index):** Chỉ số sức mạnh tương đối (0–100). RSI dưới 30 báo hiệu cổ phiếu bị bán quá mức (vùng giá hấp dẫn để Mua), RSI trên 70 báo hiệu bị mua quá đà (dễ đảo chiều để Bán).
+*   **MACD (Moving Average Convergence Divergence):** Chỉ báo xu hướng động lượng giúp xác định khi nào xu hướng tăng/giảm giá bắt đầu tăng tốc hay suy yếu.
+*   **Bollinger Bands (BB):** Dải Bollinger gồm giới hạn trên và dưới của biến động giá. Giá thường đi giữa dải này; chạm dải dưới có xu hướng nảy lên, chạm dải trên có xu hướng giảm lại.
+*   **ATR (Average True Range):** Đo lường biên độ dao động thực tế tuyệt đối của giá. Dùng để đặt dải bảo vệ an toàn cho giá dự báo của AI.
+*   **ADX (Average Directional Index):** Đo lường cường độ mạnh yếu của xu hướng hiện tại (ADX > 25 là xu hướng rõ ràng, ADX < 20 là thị trường đi ngang).
+*   **VIX (Volatility Index):** Chỉ số đo lường mức độ lo sợ của thị trường tài chính Mỹ. VIX tăng cao báo hiệu rủi ro bán tháo cổ phiếu tăng.
+
+### Khái niệm mô hình và đầu tư
+*   **Tín hiệu đồng thuận (Consensus Signal):** Điều kiện kích hoạt giao dịch khi cả hai mô hình (XGBoost và Transformer) đồng thời báo giá mở cửa ngày mai tăng vượt mức ngưỡng an toàn (ví dụ: > +0.25%).
+*   **Backtest (Kiểm thử lịch sử):** Giả lập việc chạy mô hình AI để giao dịch trong quá khứ nhằm đo lường lợi nhuận thực tế, tỷ lệ thắng/thua trước khi đưa vào chạy trực tiếp.
+*   **Slippage (Trượt giá):** Khoảng chênh lệch giữa giá bạn muốn khớp lệnh và giá khớp lệnh thực tế trên sàn do độ trễ truyền dữ liệu.
+
+---
+
+## 3. Thuật ngữ Công nghệ & Trí tuệ Nhân tạo (AI)
+
+Để giúp bạn hiểu rõ các khái niệm kỹ thuật phức tạp trong các mô hình học sâu (Deep Learning) được áp dụng trong dự án, dưới đây là giải thích trực quan:
+
+*   **GLU (Gated Linear Unit - Cổng tuyến tính có cổng chặn):** Đóng vai trò như một **bảo vệ thông minh** đứng ở đầu vào. Bảo vệ này sẽ lọc các chỉ báo kỹ thuật đầu vào, chỉ cho phép các tín hiệu chất lượng đi qua khối attention và chặn đứng các thông tin nhiễu.
+*   **Self-Attention (Cơ chế tự chú ý):** Giúp mô hình tự động nhận diện và **tập trung đặc biệt** vào những ngày giao dịch có biến động chấn động trong quá khứ (ví dụ ngày có tin tức xấu), thay vì đánh giá 45 ngày lịch sử có tầm quan trọng như nhau.
+*   **Bidirectional GRU (Mạng hồi quy GRU hai chiều):** Mạng nơ-ron có trí nhớ chuỗi thời gian được huấn luyện đọc chuỗi dữ liệu theo **hai chiều ngược nhau** (từ quá khứ đến hiện tại và ngược lại). Điều này giúp AI nắm bắt xu hướng giá toàn diện và trọn vẹn hơn.
+*   **Conv1D (Mạng tích chập 1 chiều):** Đóng vai trò như chiếc **kính lúp** tự động quét qua biểu đồ giá để phát hiện các mẫu hình nến cục bộ ngắn hạn (như mẫu hình nến đảo chiều 2-3 phiên liên tục).
+*   **Positional Embedding (Nhúng vị trí):** Cơ chế **đóng dấu ngày tháng** lên dữ liệu đầu vào, giúp mô hình Attention biết chính xác thứ tự trước sau của các phiên giao dịch lịch sử.
+*   **Flatten (Làm phẳng):** Hành động chuyển đổi ma trận dữ liệu nhiều chiều thành một hàng dài các con số liên tiếp để đưa vào mô hình XGBoost.
+*   **Huber Loss (Hàm tổn thất Huber):** Hàm đo lường sai số thông minh. Huber Loss phạt bình thường các lỗi nhỏ nhưng phạt rất nhẹ các lỗi đột biến cực đoan (nhiễu thị trường), giúp mô hình không bị mất phương hướng khi gặp các phiên giật giá ảo.
+*   **Adam Optimizer (Bộ tối ưu hóa Adam):** Thuật toán tự động điều khiển tốc độ điều chỉnh mô hình. Khi xa mục tiêu thì học rất nhanh (đạp ga), khi gần đạt trạng thái tối ưu thì tự động học chậm lại (rà phanh) để đạt độ chính xác cao nhất.
+*   **Early Stopping (Dừng sớm):** Cơ chế tự động ngắt huấn luyện khi mô hình bắt đầu học vẹt (overfitting) và sai số trên tập kiểm tra độc lập không thể giảm thêm.
+
+---
+
+## 4. Cấu trúc thư mục
 
 ```
 Stock-Opening-Price-Prediction/
@@ -86,7 +129,7 @@ Stock-Opening-Price-Prediction/
 
 ---
 
-## 3. Luồng xử lý dữ liệu
+## 5. Luồng xử lý dữ liệu
 
 ```mermaid
 graph TD
@@ -107,7 +150,7 @@ graph TD
 
 ---
 
-## 4. Chi tiết các module
+## 6. Chi tiết các module
 
 ### A. Bộ tải dữ liệu — `src/data_loader.py`
 
@@ -143,7 +186,7 @@ Sử dụng framework Optuna với thuật toán TPE (Tree-structured Parzen Est
 
 ---
 
-## 5. Kiến trúc mô hình AI
+## 7. Kiến trúc mô hình AI
 
 Hệ thống sử dụng hai mô hình chạy song song, kết hợp qua cơ chế **Hybrid Stacking**:
 
@@ -174,7 +217,7 @@ Mô hình được lưu với nhãn thời gian `_YYYYMMDD_HHMM` phục vụ lư
 
 ---
 
-## 6. Hệ thống kiểm thử Backtest
+## 8. Hệ thống kiểm thử Backtest
 
 Module `scripts/run_backtest.py` mô phỏng chiến lược giao dịch **Overnight Trading** trên tập kiểm thử out-of-sample:
 
@@ -205,7 +248,7 @@ Chiến lược bảo vệ vốn hiệu quả: Max Drawdown chỉ -2.98% so vớ
 
 ---
 
-## 7. Quản trị rủi ro
+## 9. Quản trị rủi ro
 
 Hệ thống không chỉ đưa ra giá dự báo đơn lẻ mà tích hợp pipeline quản lý rủi ro:
 
@@ -223,7 +266,7 @@ $$\text{Khoảng giá an toàn} = \text{Giá dự báo} \pm 1.5 \times \text{ATR
 
 ---
 
-## 8. Xử lý nhiễu tỷ giá USD/VND
+## 10. Xử lý nhiễu tỷ giá USD/VND
 
 Nguồn Yahoo Finance (`USDVND=X`) có lỗi dữ liệu nghiêm trọng tại một số phiên lịch sử — tỷ giá bị ghi nhận sai lệch hàng nghìn lần (ví dụ: 3.210 thay vì 21.000), tạo ra biến động ảo lên tới +562% trong một ngày.
 
@@ -236,7 +279,7 @@ Kết hợp với StandardScaler, mô hình hoàn toàn không bị ảnh hưở
 
 ---
 
-## 9. Kết quả đánh giá
+## 11. Kết quả đánh giá
 
 Sai số trên tập kiểm thử (Test Set) độc lập, sau khi tích hợp đầy đủ các đặc trưng vĩ mô và cảm xúc tin tức:
 
@@ -244,8 +287,8 @@ Sai số trên tập kiểm thử (Test Set) độc lập, sau khi tích hợp �
 
 | Mô hình | MAE (VND) | MAPE |
 |---|---|---|
-| XGBoost | 219,57 | 0.37% |
-| Transformer | 220,59 | 0.37% |
+| XGBoost | 228,09 | 0.38% |
+| Transformer | 218,96 | 0.36% |
 
 ### Alphabet (GOOGL)
 
@@ -261,11 +304,9 @@ Sai số trên tập kiểm thử (Test Set) độc lập, sau khi tích hợp �
 | XGBoost | 190.992,80 | ~$7.52 | 1.31% |
 | Transformer | 156.554,49 | ~$6.16 | 1.08% |
 
-Toàn bộ các mô hình đều duy trì sai lệch trung bình quanh mốc ~1%. VNM.VN và GOOGL đạt dưới 0.9%.
-
 ---
 
-## 10. Hướng dẫn cài đặt và chạy
+## 12. Hướng dẫn cài đặt và chạy
 
 ### Yêu cầu
 

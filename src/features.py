@@ -30,6 +30,7 @@ class DataTransformer:
         # Sử dụng StandardScaler để tránh bị ảnh hưởng bởi các giá trị ngoại lai (outliers)
         self.feature_scaler = StandardScaler()
         self.target_scaler = StandardScaler()
+        self.spread_scaler = StandardScaler()
         
         # Định nghĩa các trường dữ liệu đầu vào dừng cho AI (24 đặc trưng)
         self.feature_cols = [
@@ -42,6 +43,7 @@ class DataTransformer:
             'sentiment_score', 'news_volume', 'bond_yield_10y', 'dollar_index_change'
         ]
         self.target_col = 'target_return'
+        self.spread_col = 'target_spread'
 
     def transform_df(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -108,14 +110,19 @@ class DataTransformer:
         X_scaled = self.feature_scaler.fit_transform(X_raw)
         y_scaled = self.target_scaler.fit_transform(y_raw)
         
-        return X_scaled, y_scaled
+        y_spread_scaled = None
+        if self.spread_col in df.columns:
+            y_spread_raw = df[[self.spread_col]].values
+            y_spread_scaled = self.spread_scaler.fit_transform(y_spread_raw)
+            
+        return X_scaled, y_scaled, y_spread_scaled
 
 
-    def create_sliding_windows(self, X_scaled: np.ndarray, y_scaled: np.ndarray):
+    def create_sliding_windows(self, X_scaled: np.ndarray, y_scaled: np.ndarray, y_spread_scaled: np.ndarray = None):
         """
         Thuật toán Cửa sổ trượt (Sliding Window) để biến đổi dữ liệu thành mảng 3D Tensor.
         """
-        X_3D, y_3D = [], []
+        X_3D, y_3D, y_spread_3D = [], [], []
         
         # Duyệt qua toàn bộ tập dữ liệu để cắt thành các khối thời gian liên tiếp
         for i in range(self.time_steps, len(X_scaled)):
@@ -123,10 +130,14 @@ class DataTransformer:
             X_3D.append(X_scaled[i - self.time_steps : i])
             # Lấy đáp án của ngày thứ i làm đầu ra để mô hình học
             y_3D.append(y_scaled[i])
+            if y_spread_scaled is not None:
+                y_spread_3D.append(y_spread_scaled[i])
             
-        return np.array(X_3D), np.array(y_3D)
+        if y_spread_scaled is not None:
+            return np.array(X_3D), np.array(y_3D), np.array(y_spread_3D)
+        return np.array(X_3D), np.array(y_3D), None
 
-    def split_train_test_by_year(self, df: pd.DataFrame, X_3D: np.ndarray, y_3D: np.ndarray):
+    def split_train_test_by_year(self, df: pd.DataFrame, X_3D: np.ndarray, y_3D: np.ndarray, y_spread_3D: np.ndarray = None):
         """
         Chia tập dữ liệu theo mốc thời gian lịch sử (theo năm).
         - Giữ nguyên trình tự thời gian (Không dùng shuffle trộn lẫn dữ liệu tương lai).
@@ -140,11 +151,14 @@ class DataTransformer:
         X_train, y_train = X_3D[train_mask], y_3D[train_mask]
         X_test, y_test = X_3D[test_mask], y_3D[test_mask]
         
+        y_train_spread = y_spread_3D[train_mask] if y_spread_3D is not None else None
+        y_test_spread = y_spread_3D[test_mask] if y_spread_3D is not None else None
+        
         y_test_raw = df_align.loc[test_mask, self.target_col].values
         
-        return X_train, y_train, X_test, y_test, y_test_raw
+        return X_train, y_train, X_test, y_test, y_test_raw, y_train_spread, y_test_spread
 
-    def split_train_test_chronological(self, df: pd.DataFrame, X_3D: np.ndarray, y_3D: np.ndarray, train_ratio: float = 0.8):
+    def split_train_test_chronological(self, df: pd.DataFrame, X_3D: np.ndarray, y_3D: np.ndarray, y_spread_3D: np.ndarray = None, train_ratio: float = 0.8):
         """
         Chia tập dữ liệu theo tỷ lệ thời gian (mặc định 80% Train / 20% Test).
         Phù hợp khi dữ liệu lịch sử bị giới hạn (ví dụ: Yahoo Finance chỉ có từ 2023).
@@ -158,6 +172,9 @@ class DataTransformer:
         X_test  = X_3D[split_idx:]
         y_test  = y_3D[split_idx:]
         
+        y_train_spread = y_spread_3D[:split_idx] if y_spread_3D is not None else None
+        y_test_spread = y_spread_3D[split_idx:] if y_spread_3D is not None else None
+        
         # Lấy mảng target_return thô của tập Test để tính giá thực tế
         df_align = df.iloc[self.time_steps:].reset_index(drop=True)
         y_test_raw = df_align.loc[split_idx:, self.target_col].values
@@ -166,7 +183,7 @@ class DataTransformer:
         print(f"   🔹 Train: {X_train.shape[0]} mẫu")
         print(f"   🔸 Test : {X_test.shape[0]} mẫu")
         
-        return X_train, y_train, X_test, y_test, y_test_raw
+        return X_train, y_train, X_test, y_test, y_test_raw, y_train_spread, y_test_spread
 
 if __name__ == "__main__":
     import sys

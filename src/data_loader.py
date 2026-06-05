@@ -441,6 +441,8 @@ def fetch_and_prepare_data(ticker: str, start_date: str = "2015-01-01", end_date
 
     # Biến mục tiêu: tỷ suất lợi nhuận mở cửa ngày mai so với đóng cửa hôm nay
     df['target_return']   = (df['open'].shift(-1) - df['close']) / df['close']
+    df['target_spread']   = (df['high'].shift(-1) - df['low'].shift(-1)) / df['close']
+
 
     # Log phân tích tương quan đặc trưng trước và sau khi làm mịn Kalman
     try:

@@ -3,7 +3,7 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # Ẩn các cảnh báo hệ thống c
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Dense, Dropout, Input, MultiHeadAttention, LayerNormalization, Flatten, Conv1D
+from tensorflow.keras.layers import Dense, Dropout, Input, MultiHeadAttention, LayerNormalization, Flatten, Conv1D, Bidirectional, GRU, Multiply
 from xgboost import XGBRegressor
 
 # ==========================================
@@ -74,12 +74,18 @@ class PositionalEmbedding(tf.keras.layers.Layer):
         })
         return config
 
-def build_transformer(input_shape, d_model=128, num_heads=8, dropout_rate=0.3, learning_rate=1e-4):
+def glu(x, d_model):
+    gate = Dense(d_model, activation="sigmoid", kernel_regularizer=tf.keras.regularizers.l2(1e-4))(x)
+    linear = Dense(d_model, kernel_regularizer=tf.keras.regularizers.l2(1e-4))(x)
+    return Multiply()([linear, gate])
+
+def build_transformer(input_shape, d_model=128, num_heads=8, dropout_rate=0.3, learning_rate=1e-4, multi_task=True):
     """
     Xây dựng kiến trúc mạng Transformer sâu hơn để học tốt hơn trên chuỗi thời gian:
     - 2 Lớp Multi-Head Attention (num_heads, key_dim=d_model, dropout=dropout_rate)
     - Residual Connections & Layer Normalization
-    - Feed-Forward Networks cho từng block với L2 regularization
+    - Gated Linear Unit (GLU) ở cổng vào để lọc đặc trưng
+    - Bidirectional GRU thay cho Flatten để tóm tắt thông tin thời gian mà không phá vỡ trình tự
     - Tăng số neuron lớp Dense để khớp dữ liệu phức tạp và chống overfitting
     """
     inputs = Input(shape=input_shape)
@@ -92,6 +98,10 @@ def build_transformer(input_shape, d_model=128, num_heads=8, dropout_rate=0.3, l
         activation='relu',
         kernel_regularizer=tf.keras.regularizers.l2(1e-4)
     )(inputs)
+    x = LayerNormalization(epsilon=1e-6)(x)
+    
+    # Apply GLU gating to filter inputs
+    x = glu(x, d_model)
     x = LayerNormalization(epsilon=1e-6)(x)
     
     # 2. Add Positional Embedding
@@ -121,21 +131,44 @@ def build_transformer(input_shape, d_model=128, num_heads=8, dropout_rate=0.3, l
     ffn_2 = Dense(d_model, kernel_regularizer=tf.keras.regularizers.l2(1e-4))(ffn_2)
     x = LayerNormalization(epsilon=1e-6)(x + ffn_2)  # Residual connection 4
     
-    # 4. Flatten to retain complete temporal structure
-    x = Flatten()(x)
+    # 4. Bidirectional GRU instead of Flatten
+    x = Bidirectional(
+        GRU(d_model // 4, return_sequences=False, kernel_regularizer=tf.keras.regularizers.l2(1e-4))
+    )(x)
     
     # 5. Output layers
     x = Dense(d_model, activation="relu", kernel_regularizer=tf.keras.regularizers.l2(1e-4))(x)
     x = Dropout(dropout_rate)(x)
     x = Dense(d_model // 2, activation="relu", kernel_regularizer=tf.keras.regularizers.l2(1e-4))(x)
     x = Dropout(dropout_rate)(x)
-    x = Dense(32, activation="relu", kernel_regularizer=tf.keras.regularizers.l2(1e-4))(x)
-    outputs = Dense(1)(x)
     
-    model = Model(inputs, outputs)
+    # Shared latent embedding space
+    embedding = Dense(32, activation="relu", name="latent_embedding", kernel_regularizer=tf.keras.regularizers.l2(1e-4))(x)
     
-    optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
-    model.compile(optimizer=optimizer, loss='huber')
+    if multi_task:
+        output_return = Dense(1, name="output_return")(embedding)
+        output_spread = Dense(1, name="output_spread")(embedding)
+        model = Model(inputs, [output_return, output_spread])
+        
+        optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
+        model.compile(
+            optimizer=optimizer,
+            loss={
+                "output_return": "huber",
+                "output_spread": "huber"
+            },
+            loss_weights={
+                "output_return": 1.0,
+                "output_spread": 0.3
+            }
+        )
+    else:
+        output_return = Dense(1, name="output_return")(embedding)
+        model = Model(inputs, output_return)
+        
+        optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
+        model.compile(optimizer=optimizer, loss="huber")
+        
     return model
 
 
