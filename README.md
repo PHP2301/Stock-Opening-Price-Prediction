@@ -29,11 +29,11 @@ Dự án được xây dựng phục vụ nghiên cứu định lượng (quanti
 
 Giá cổ phiếu là chuỗi thời gian không dừng (non-stationary). Dự đoán trực tiếp giá tuyệt đối thường dẫn đến hiện tượng mô hình chỉ sao chép giá ngày hôm trước. Thay vào đó, hệ thống dự đoán **tỷ suất sinh lời mở cửa (Opening Return)**:
 
-$$\text{target\_return} = \frac{\text{Open}_{T} - \text{Close}_{T-1}}{\text{Close}_{T-1}}$$
+$$\text{target-return} = \frac{\text{Open}_{T} - \text{Close}_{T-1}}{\text{Close}_{T-1}}$$
 
 Sau khi có tỷ suất dự đoán, giá mở cửa được giải mã:
 
-$$\text{Predicted Open} = \text{Close}_{today} \times (1 + \text{target\_return}_{predicted})$$
+$$\text{Predicted Open} = \text{Close}_{today} \times (1 + \text{target-return}_{predicted})$$
 
 ### Cửa sổ trượt (Lookback Window)
 

@@ -44,10 +44,10 @@ Hệ thống sử dụng cơ chế gộp dữ liệu thông minh từ 2 nguồn 
 ### 🎯 Biến mục tiêu dự báo (Target)
 
 Mô hình dự báo **Tỷ suất lợi nhuận mở cửa ngày mai (`target_return`)**:
-$$\text{target\_return} = \frac{\text{Open}_{tomorrow} - \text{Close}_{today}}{\text{Close}_{today}}$$
+$$\text{target-return} = \frac{\text{Open}_{tomorrow} - \text{Close}_{today}}{\text{Close}_{today}}$$
 
 Sau khi AI dự báo ra tỷ suất này, hệ thống sẽ tự động quy đổi ngược về giá tiền thực tế:
-$$\text{Giá mở cửa dự báo} = \text{Close}_{today} \times (1 + \text{target\_return}_{predicted})$$
+$$\text{Giá mở cửa dự báo} = \text{Close}_{today} \times (1 + \text{target-return}_{predicted})$$
 
 ---
 

@@ -41,7 +41,7 @@ Hệ thống kết hợp thông minh các nguồn dữ liệu trực tuyến nh�
 ### 2. Bộ biến đổi dữ liệu & Cửa sổ trượt (`src/features.py`)
 Quản lý lớp `DataTransformer` chịu trách nhiệm xử lý các đặc trưng:
 *   **Tại sao không dự đoán trực tiếp giá tuyệt đối?** Giá tuyệt đối (ví dụ: 60.000đ hay 80.000đ) là một chuỗi không dừng (non-stationary), dễ gây ra hiện tượng **Overfitting** và **Trễ xu hướng** (mô hình học máy chỉ học cách lặp lại giá ngày hôm qua). Vì thế dự án chuyển sang dự đoán **Tỷ suất sinh lời mở cửa (`target_return`)**:
-    $$\text{target\_return} = \frac{\text{Giá mở cửa ngày mai} - \text{Giá đóng cửa hôm nay}}{\text{Giá đóng cửa hôm nay}}$$
+    $$\text{target-return} = \frac{\text{Giá mở cửa ngày mai} - \text{Giá đóng cửa hôm nay}}{\text{Giá đóng cửa hôm nay}}$$
 *   **Cửa sổ trượt 45 ngày (`LOOKBACK_WINDOW = 45`):** Mô hình Deep Learning sẽ quan sát liên tiếp **45 phiên giao dịch quá khứ** (~2.5 tháng) làm đầu vào để dự báo phiên kế tiếp. Đầu vào mô hình có dạng ma trận 3 chiều: `(Số mẫu, 45 ngày, 24 đặc trưng)`.
 *   **Làm mịn dữ liệu (Kalman Filter):** Trước khi tính toán các chỉ báo kỹ thuật, hệ thống chạy **Bộ lọc Kalman** trên giá đóng cửa thô để khử nhiễu dao động ngắn hạn của sàn chứng khoán, tạo ra đường giá xu hướng mượt mà `close_smoothed`.
 *   **Chuẩn hóa dữ liệu:** Sử dụng `StandardScaler` (đưa dữ liệu về trung bình = 0, độ lệch chuẩn = 1) độc lập cho tập đặc trưng đầu vào (`feature_scaler`) và biến mục tiêu (`target_scaler`) để tăng tốc độ hội tụ và tránh ảnh hưởng bởi giá trị ngoại lai (outliers).
