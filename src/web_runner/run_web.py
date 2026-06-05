@@ -206,7 +206,8 @@ def main():
     import uvicorn
     # Run uvicorn server with app from src.web.backend.api:app relative to ROOT_DIR
     os.chdir(ROOT_DIR)
-    uvicorn.run("src.web.backend.api:app", host="127.0.0.1", port=8000, reload=True)
+    host = os.getenv("HOST", "127.0.0.1")
+    uvicorn.run("src.web.backend.api:app", host=host, port=8000, reload=True)
 
 
 

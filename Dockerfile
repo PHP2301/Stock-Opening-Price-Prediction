@@ -1,0 +1,29 @@
+FROM python:3.10-slim
+
+# Thiết lập thư mục làm việc
+WORKDIR /app
+
+# Cài đặt các thư viện hệ thống cần thiết
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy và cài đặt python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy toàn bộ mã nguồn vào container
+COPY . .
+
+# Thiết lập biến môi trường
+ENV PYTHONUNBUFFERED=1
+ENV HOST=0.0.0.0
+ENV PORT=8000
+
+# Mở cổng API
+EXPOSE 8000
+
+# Lệnh khởi chạy server web
+CMD ["python", "src/web_runner/run_web.py"]

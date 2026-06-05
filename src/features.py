@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import pandas_ta as ta
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 
 def kalman_filter(series: pd.Series, R: float = 0.01, Q: float = 1e-5) -> pd.Series:
@@ -20,10 +21,10 @@ def kalman_filter(series: pd.Series, R: float = 0.01, Q: float = 1e-5) -> pd.Ser
     return pd.Series(smoothed, index=series.index)
 
 class DataTransformer:
-    def __init__(self, time_steps: int = 30):
+    def __init__(self, time_steps: int = 45):
         """
         Khởi tạo bộ biến đổi dữ liệu.
-        :param time_steps: Số lượng phiên giao dịch quá khứ AI dùng để nhìn lại (mặc định 30 phiên ~ 1.5 tháng).
+        :param time_steps: Số lượng phiên giao dịch quá khứ AI dùng để nhìn lại (mặc định 45 phiên).
         """
         self.time_steps = time_steps
         # Khởi tạo 2 bộ scaler độc lập: 1 cho các đặc trưng đầu vào, 1 riêng cho biến mục tiêu (Target)
@@ -32,15 +33,17 @@ class DataTransformer:
         self.target_scaler = StandardScaler()
         self.spread_scaler = StandardScaler()
         
-        # Định nghĩa các trường dữ liệu đầu vào dừng cho AI (24 đặc trưng)
+        # Định nghĩa 34 đặc trưng cơ bản
         self.feature_cols = [
-            'rsi_14', 'macd_ratio', 'volatility_20', 
-            'close_lag1_ratio', 'close_lag2_ratio', 'close_lag3_ratio',
-            'open_lag1_ratio', 'open_lag2_ratio', 'rsi_lag1',
-            'volume_change', 'intraday_return',
-            'bb_lower_ratio', 'bb_middle_ratio', 'bb_upper_ratio', 'atr_ratio',
-            'ema_14_ratio', 'roc_10', 'adx_14', 'market_return', 'vix',
-            'sentiment_score', 'news_volume', 'bond_yield_10y', 'dollar_index_change'
+            # Nhánh 1 — Giá & Động lượng (12)
+            'gap_open', 'open_return', 'buying_pressure', 'shadow_ratio', 'intraday_range',
+            'return_1d', 'return_2d', 'return_3d', 'mom_5d', 'mom_10d', 'mom_20d', 'dist_ma50',
+            # Nhánh 2 — Khối lượng & Biến động (6)
+            'volume_change', 'volume_sma_ratio', 'volume_zscore', 'ad_line_ratio', 'obv_zscore', 'vol_ratio',
+            # Nhánh 3 — Kỹ thuật, Vĩ mô & Lịch (16)
+            'rsi_14', 'macd_ratio', 'bb_position', 'adx_14', 'stoch_k', 'efficiency_ratio',
+            'vix_lag1', 'bond_yield_lag1', 'usdvnd_change', 'vnindex_return_lag1',
+            'day_of_week_sin', 'day_of_week_cos', 'month_sin', 'month_cos', 'is_quarter_end', 'days_before_tet'
         ]
         self.target_col = 'target_return'
         self.spread_col = 'target_spread'
@@ -54,33 +57,64 @@ class DataTransformer:
         # Chuyển đổi vô cực (inf) thành NaN trước khi tính toán
         df_copy = df_copy.replace([np.inf, -np.inf], np.nan)
         
-        # Chuyển đổi các đặc trưng giá tuyệt đối sang dạng tỷ lệ so với close ngày hiện tại
-        df_copy['ema_14_ratio'] = (df_copy['ema_14'] - df_copy['close']) / df_copy['close']
-        df_copy['bb_lower_ratio'] = (df_copy['bb_lower'] - df_copy['close']) / df_copy['close']
-        df_copy['bb_middle_ratio'] = (df_copy['bb_middle'] - df_copy['close']) / df_copy['close']
-        df_copy['bb_upper_ratio'] = (df_copy['bb_upper'] - df_copy['close']) / df_copy['close']
-        df_copy['atr_ratio'] = df_copy['atr_14'] / df_copy['close']
+        # Nhánh 1: Giá & Động lượng
+        df_copy['gap_open'] = df_copy['open'] / df_copy['close'].shift(1) - 1
+        df_copy['open_return'] = df_copy['open'] / df_copy['open'].shift(1) - 1
+        df_copy['buying_pressure'] = (df_copy['close_smoothed'] - df_copy['low']) / (df_copy['high'] - df_copy['low'] + 1e-9)
+        df_copy['shadow_ratio'] = (df_copy['high'] - df_copy['close_smoothed']) / (df_copy['close_smoothed'] - df_copy['low'] + 1e-9)
+        df_copy['intraday_range'] = (df_copy['high'] - df_copy['low']) / df_copy['close_smoothed']
+        df_copy['return_1d'] = df_copy['close_smoothed'].shift(1) / df_copy['close_smoothed'].shift(2) - 1
+        df_copy['return_2d'] = df_copy['close_smoothed'].shift(2) / df_copy['close_smoothed'].shift(3) - 1
+        df_copy['return_3d'] = df_copy['close_smoothed'].shift(3) / df_copy['close_smoothed'].shift(4) - 1
+        df_copy['mom_5d'] = df_copy['close_smoothed'] / df_copy['close_smoothed'].shift(5) - 1
+        df_copy['mom_10d'] = df_copy['close_smoothed'] / df_copy['close_smoothed'].shift(10) - 1
+        df_copy['mom_20d'] = df_copy['close_smoothed'] / df_copy['close_smoothed'].shift(20) - 1
+        df_copy['dist_ma50'] = df_copy['close_smoothed'] / df_copy['close_smoothed'].rolling(50).mean() - 1
+
+        # Nhánh 2: Khối lượng & Biến động
+        df_copy['volume_change'] = df_copy['volume'].pct_change()
+        df_copy['volume_sma_ratio'] = df_copy['volume'] / (df_copy['volume'].rolling(20).mean() + 1e-9)
+        mean_vol = df_copy['volume'].rolling(20).mean()
+        std_vol = df_copy['volume'].rolling(20).std()
+        df_copy['volume_zscore'] = (df_copy['volume'] - mean_vol) / (std_vol + 1e-9)
+        df_copy['ad_line_ratio'] = ((df_copy['close_smoothed'] - df_copy['low']) - (df_copy['high'] - df_copy['close_smoothed'])) / (df_copy['high'] - df_copy['low'] + 1e-9)
         
-        # Tương thích cột MACD
-        macd_cols = [c for c in df_copy.columns if 'MACD_12_26_9' in c or 'macd' in c.lower()]
-        if macd_cols:
-            df_copy['macd_ratio'] = df_copy[macd_cols[0]] / df_copy['close']
+        # obv_zscore
+        obv_direction = np.where(df_copy['close_smoothed'].diff() > 0, 1, np.where(df_copy['close_smoothed'].diff() < 0, -1, 0))
+        obv = (obv_direction * df_copy['volume']).cumsum()
+        delta_obv = obv.diff(5)
+        std_delta_obv = delta_obv.rolling(20).std()
+        df_copy['obv_zscore'] = delta_obv / (std_delta_obv + 1e-9)
+        
+        pct_change = df_copy['close_smoothed'].pct_change()
+        volatility_5d = pct_change.rolling(5).std()
+        volatility_60d = pct_change.rolling(60).std()
+        df_copy['vol_ratio'] = volatility_5d / (volatility_60d + 1e-9)
+
+        # Nhánh 3: Kỹ thuật, Vĩ mô & Lịch
+        df_copy['rsi_14'] = ta.rsi(df_copy['close_smoothed'], length=14)
+        
+        macd_df = ta.macd(df_copy['close_smoothed'], fast=12, slow=26, signal=9)
+        if macd_df is not None and not macd_df.empty:
+            df_copy['macd_ratio'] = macd_df.iloc[:, 0] / (macd_df.iloc[:, 2] + 1e-9)
         else:
             df_copy['macd_ratio'] = 0.0
             
-        df_copy['close_lag1_ratio'] = (df_copy['close_lag1'] - df_copy['close']) / df_copy['close']
-        df_copy['close_lag2_ratio'] = (df_copy['close_lag2'] - df_copy['close']) / df_copy['close']
-        df_copy['close_lag3_ratio'] = (df_copy['close_lag3'] - df_copy['close']) / df_copy['close']
-        df_copy['open_lag1_ratio'] = (df_copy['open_lag1'] - df_copy['close']) / df_copy['close']
-        df_copy['open_lag2_ratio'] = (df_copy['open_lag2'] - df_copy['close']) / df_copy['close']
-        
-        # Tương thích tên chỉ số vix
-        vix_cols = [c for c in df_copy.columns if c.lower() in ['vix', 'vix_close']]
-        if vix_cols:
-            df_copy['vix'] = df_copy[vix_cols[0]]
+        bb_df = ta.bbands(df_copy['close_smoothed'], length=20, std=2)
+        if bb_df is not None and not bb_df.empty:
+            df_copy['bb_position'] = (df_copy['close_smoothed'] - bb_df.iloc[:, 0]) / (bb_df.iloc[:, 2] - bb_df.iloc[:, 0] + 1e-9)
         else:
-            df_copy['vix'] = 20.0
+            df_copy['bb_position'] = 0.5
             
+        adx_df = ta.adx(df_copy['high'], df_copy['low'], df_copy['close_smoothed'], length=14)
+        df_copy['adx_14'] = adx_df.iloc[:, 0] if adx_df is not None else 20.0
+        
+        stoch_df = ta.stoch(df_copy['high'], df_copy['low'], df_copy['close_smoothed'], fast_k=14)
+        df_copy['stoch_k'] = stoch_df.iloc[:, 0] if stoch_df is not None else 50.0
+        
+        daily_changes = df_copy['close_smoothed'].diff()
+        df_copy['efficiency_ratio'] = (df_copy['close_smoothed'] - df_copy['close_smoothed'].shift(10)).abs() / (daily_changes.abs().rolling(10).sum() + 1e-9)
+
         # Trích xuất và điền khuyết các cột đặc trưng quan tâm
         df_out = pd.DataFrame(index=df.index)
         for col in self.feature_cols:
@@ -158,10 +192,9 @@ class DataTransformer:
         
         return X_train, y_train, X_test, y_test, y_test_raw, y_train_spread, y_test_spread
 
-    def split_train_test_chronological(self, df: pd.DataFrame, X_3D: np.ndarray, y_3D: np.ndarray, y_spread_3D: np.ndarray = None, train_ratio: float = 0.8):
+    def split_train_test_chronological(self, df: pd.DataFrame, X_3D: np.ndarray, y_3D: np.ndarray, y_spread_3D: np.ndarray = None, train_ratio: float = 0.8, purge_gap: int = 45):
         """
-        Chia tập dữ liệu theo tỷ lệ thời gian (mặc định 80% Train / 20% Test).
-        Phù hợp khi dữ liệu lịch sử bị giới hạn (ví dụ: Yahoo Finance chỉ có từ 2023).
+        Chia tập dữ liệu theo tỷ lệ thời gian (mặc định 80% Train / 20% Test) kết hợp khoảng cách ly (Purge Gap).
         Giữ nguyên thứ tự thời gian, KHÔNG shuffle.
         """
         total = len(X_3D)
@@ -169,17 +202,19 @@ class DataTransformer:
         
         X_train = X_3D[:split_idx]
         y_train = y_3D[:split_idx]
-        X_test  = X_3D[split_idx:]
-        y_test  = y_3D[split_idx:]
+        
+        test_start = min(split_idx + purge_gap, total)
+        X_test  = X_3D[test_start:]
+        y_test  = y_3D[test_start:]
         
         y_train_spread = y_spread_3D[:split_idx] if y_spread_3D is not None else None
-        y_test_spread = y_spread_3D[split_idx:] if y_spread_3D is not None else None
+        y_test_spread = y_spread_3D[test_start:] if y_spread_3D is not None else None
         
         # Lấy mảng target_return thô của tập Test để tính giá thực tế
         df_align = df.iloc[self.time_steps:].reset_index(drop=True)
-        y_test_raw = df_align.loc[split_idx:, self.target_col].values
+        y_test_raw = df_align.loc[test_start:, self.target_col].values
         
-        print(f"📊 Chia dữ liệu theo tỷ lệ {int(round(train_ratio*100))}/{int(round((1-train_ratio)*100))}:")
+        print(f"📊 Chia dữ liệu theo tỷ lệ {int(round(train_ratio*100))}/{int(round((1-train_ratio)*100))} (Purge Gap: {purge_gap} phiên):")
         print(f"   🔹 Train: {X_train.shape[0]} mẫu")
         print(f"   🔸 Test : {X_test.shape[0]} mẫu")
         

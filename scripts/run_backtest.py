@@ -27,7 +27,7 @@ sys.path.append(ROOT_DIR)
 
 from src.data_loader import fetch_and_prepare_data, format_vn
 from src.features import DataTransformer
-from src.ai_models import PositionalEmbedding
+from src.ai_models import PositionalEmbedding, TimeDecayAttention, MultiTaskModel, UncertaintyWeightsLayer
 
 def compute_metrics(equity, bh_equity, dates):
     """
@@ -70,17 +70,17 @@ def compute_metrics(equity, bh_equity, dates):
         "bh_mdd": bh_mdd
     }
 
-def run_simulation(df_test, X_test, y_test_raw, transformer, xgb_model, transformer_model, ticker, commission_pct, slippage_pct):
+def run_simulation(df_test, X_test, y_test_raw, transformer, xgb_model, transformer_model, ticker, commission_pct, slippage_pct, threshold_buy=0.0010, threshold_sell=-0.0010):
     """
     Giả lập giao dịch qua đêm (Overnight Trading):
     - Đưa ra dự đoán tại Close ngày hôm nay.
-    - Nếu cả hai mô hình (XGBoost Lai & Transformer) đồng thuận BÁO TĂNG (> +0.25%): MUA tại Close (chịu phí + trượt giá).
+    - Nếu cả hai mô hình (XGBoost Lai & Transformer) đồng thuận BÁO TĂNG (> threshold_buy): MUA tại Close (chịu phí + trượt giá).
     - BÁN toàn bộ tại Open ngày hôm sau (chịu phí + trượt giá).
     """
-    # Xây dựng bộ trích xuất đặc trưng ẩn từ layer áp chót của Transformer
+    # Xây dựng bộ trích xuất đặc trưng ẩn chính từ Transformer
     feature_extractor = Model(
         inputs=transformer_model.input,
-        outputs=transformer_model.layers[-2].output
+        outputs=transformer_model.get_layer("latent_embedding").output
     )
     
     print("   [PREDICT] Đang chạy dự báo trên tập dữ liệu kiểm thử...")
@@ -92,8 +92,9 @@ def run_simulation(df_test, X_test, y_test_raw, transformer, xgb_model, transfor
     xgb_pred_scaled = xgb_model.predict(X_test_hybrid).reshape(-1, 1)
     xgb_returns = transformer.target_scaler.inverse_transform(xgb_pred_scaled).ravel()
     
-    trans_pred_scaled = transformer_model.predict(X_test, verbose=0)
-    trans_returns = transformer.target_scaler.inverse_transform(trans_pred_scaled).ravel()
+    trans_pred_output = transformer_model.predict(X_test, verbose=0)
+    trans_scaled = trans_pred_output[0] if isinstance(trans_pred_output, list) else trans_pred_output
+    trans_returns = transformer.target_scaler.inverse_transform(trans_scaled).ravel()
     
     # Khớp dữ liệu
     close_today = df_test['close'].values[:len(X_test)]
@@ -109,10 +110,6 @@ def run_simulation(df_test, X_test, y_test_raw, transformer, xgb_model, transfor
     equity = [initial_capital]
     bh_shares = initial_capital / close_today[0]
     bh_equity = [initial_capital]
-    
-    # Ngưỡng kích hoạt lệnh
-    threshold_buy = 0.0025    # +0.25%
-    threshold_sell = -0.0025  # -0.25%
     
     trades = []
     
@@ -132,9 +129,14 @@ def run_simulation(df_test, X_test, y_test_raw, transformer, xgb_model, transfor
         is_buy_signal = (sig_xgb == "Up" and sig_trans == "Up")
         confidence = "High" if (sig_xgb == sig_trans) else "Low"
         
-        # Giá khớp thực tế có Slippage
-        buy_price = t_close * (1 + slippage_pct)
-        sell_price = t_open_next * (1 - slippage_pct)
+        # Tính trượt giá động (Dynamic Slippage) dựa trên độ thanh khoản của phiên ngày t
+        current_slippage = slippage_pct
+        vol_z = df_test['volume_zscore'].values[i]
+        if vol_z < -1.0:
+            current_slippage = slippage_pct * 2.0  # Phạt trượt giá gấp đôi khi thanh khoản quá thấp
+            
+        buy_price = t_close * (1 + current_slippage)
+        sell_price = t_open_next * (1 - current_slippage)
         
         # Sáng hôm sau: Đóng vị thế qua đêm (nếu có vị thế Long)
         if position == 1:
@@ -160,8 +162,8 @@ def run_simulation(df_test, X_test, y_test_raw, transformer, xgb_model, transfor
                 "shares": shares
             })
             
-        # Ghi nhận giá trị tài sản ròng cuối ngày t+1
-        current_equity = cash if position == 0 else shares * t_open_next * (1 - slippage_pct) * (1 - commission_pct)
+        # Ghi nhận giá trị tài sản ròng cuối ngày t+1 (Sử dụng current_slippage khớp lệnh để cập nhật định giá định kỳ)
+        current_equity = cash if position == 0 else shares * t_open_next * (1 - current_slippage) * (1 - commission_pct)
         equity.append(current_equity)
         
         # Buy & Hold
@@ -198,12 +200,24 @@ def main():
     # Watchlist tickers mặc định
     TICKERS = ["VNM.VN", "GOOGL", "META"]
     
+    threshold_buy = 0.0010  # Mặc định +0.10% thay vì +0.25% để tránh quá thận trọng
+    
     # Cho phép chọn ticker cụ thể qua command line
     if len(sys.argv) > 1:
         arg = sys.argv[1].upper()
         if arg in [t.upper() for t in TICKERS]:
             TICKERS = [t for t in TICKERS if t.upper() == arg]
             print(f"🎯 Chỉ chạy Backtest mô phỏng cho mã: {TICKERS[0]}")
+            
+    # Cho phép điều chỉnh ngưỡng kích hoạt lệnh từ tham số dòng lệnh thứ 2 (ví dụ: 0.0025)
+    if len(sys.argv) > 2:
+        try:
+            threshold_buy = float(sys.argv[2])
+            print(f"⚙️ Sử dụng ngưỡng kích hoạt lệnh tùy chỉnh: {threshold_buy*100:.3f}%")
+        except ValueError:
+            pass
+            
+    threshold_sell = -threshold_buy
             
     models_dir = os.path.join(ROOT_DIR, 'models')
     figures_dir = os.path.join(ROOT_DIR, 'reports', 'figures')
@@ -231,16 +245,19 @@ def main():
         
         # Tiền xử lý
         transformer = DataTransformer(time_steps=45)
-        X_scaled, y_scaled = transformer.fit_transform_data(df)
-        X_3D, y_3D = transformer.create_sliding_windows(X_scaled, y_scaled)
+        X_scaled, y_scaled, y_spread_scaled = transformer.fit_transform_data(df)
+        X_3D, y_3D, y_spread_3D = transformer.create_sliding_windows(X_scaled, y_scaled, y_spread_scaled)
         
-        # Tách 80/20 train/test
-        X_train, y_train, X_test, y_test, y_test_raw = transformer.split_train_test_chronological(df, X_3D, y_3D, train_ratio=0.8)
+        # Tách 80/20 train/test kết hợp Purge Gap 45 phiên
+        X_train, y_train, X_test, y_test, y_test_raw, y_train_spread, y_test_spread = transformer.split_train_test_chronological(
+            df, X_3D, y_3D, y_spread_3D, train_ratio=0.8
+        )
         
-        # Lấy DataFrame tương ứng với tập test
+        # Lấy DataFrame tương ứng với tập test đã áp dụng Purge Gap
         df_align = df.iloc[transformer.time_steps:].reset_index(drop=True)
         split_idx = int(len(X_3D) * 0.8)
-        df_test = df_align.iloc[split_idx:].reset_index(drop=True)
+        test_start_idx = split_idx + 45
+        df_test = df_align.iloc[test_start_idx:].reset_index(drop=True)
         
         # Nạp mô hình đã lưu
         xgb_path = os.path.join(models_dir, f'xgboost_model_{ticker}.pkl')
@@ -257,7 +274,12 @@ def main():
         xgb_model = joblib.load(xgb_path)
         transformer_model = tf.keras.models.load_model(
             trans_path, 
-            custom_objects={'PositionalEmbedding': PositionalEmbedding}
+            custom_objects={
+                'PositionalEmbedding': PositionalEmbedding,
+                'TimeDecayAttention': TimeDecayAttention,
+                'MultiTaskModel': MultiTaskModel,
+                'UncertaintyWeightsLayer': UncertaintyWeightsLayer
+            }
         )
         transformer.feature_scaler = joblib.load(feat_scaler_path)
         transformer.target_scaler = joblib.load(targ_scaler_path)
@@ -265,7 +287,7 @@ def main():
         # Chạy giả lập trading
         dates, equity, bh_equity, trades = run_simulation(
             df_test, X_test, y_test_raw, transformer, xgb_model, transformer_model,
-            ticker, commission_pct, slippage_pct
+            ticker, commission_pct, slippage_pct, threshold_buy, threshold_sell
         )
         
         # Tính toán hiệu suất tổng thể

@@ -18,7 +18,7 @@ ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "
 sys.path.append(ROOT_DIR)
 
 from src.web.backend.db import get_db, Stock, StockPrice, NewsSentiment, PredictionRecord, init_db
-from src.ai_models import PositionalEmbedding
+from src.ai_models import PositionalEmbedding, TimeDecayAttention, MultiTaskModel, UncertaintyWeightsLayer
 from src.data_loader import format_vn, get_realtime_usd_vnd_rate
 from src.features import DataTransformer
 
@@ -138,170 +138,47 @@ def trigger_prediction(ticker: str, db: Session = Depends(get_db)):
         scaler_X = joblib.load(scaler_x_path)
         scaler_y = joblib.load(scaler_y_path)
         xgb_model = joblib.load(xgb_path)
-        transformer_model = tf.keras.models.load_model(trans_path, custom_objects={'PositionalEmbedding': PositionalEmbedding})
+        transformer_model = tf.keras.models.load_model(
+            trans_path, 
+            custom_objects={
+                'PositionalEmbedding': PositionalEmbedding,
+                'TimeDecayAttention': TimeDecayAttention,
+                'MultiTaskModel': MultiTaskModel,
+                'UncertaintyWeightsLayer': UncertaintyWeightsLayer
+            }
+        )
         
-        # Download recent data for indicators
-        raw_df = yf.download(stock.ticker, period="150d", progress=False)
-        if raw_df.empty:
-            raise HTTPException(status_code=500, detail="Không thể tải dữ liệu giao dịch mới nhất từ Yahoo Finance")
-            
-        if isinstance(raw_df.columns, pd.MultiIndex):
-            raw_df.columns = raw_df.columns.droplevel(1)
-        raw_df.columns = [col.lower() for col in raw_df.columns]
-        
-        # Real-time exchange rate
+        # Tải và tiền xử lý dữ liệu bằng data loader đồng bộ
         usd_vnd_rate = get_realtime_usd_vnd_rate()
-        df_rate_hist = pd.DataFrame()
-        try:
-            df_rate_hist = yf.download("USDVND=X", period="150d", progress=False)
-            if not df_rate_hist.empty:
-                if isinstance(df_rate_hist.columns, pd.MultiIndex):
-                    df_rate_hist.columns = [col[0].lower() for col in df_rate_hist.columns]
-                else:
-                    df_rate_hist.columns = [col.lower() for col in df_rate_hist.columns]
-                df_rate_hist = df_rate_hist[['close']].rename(columns={'close': 'rate_close'})
-                df_rate_hist['rate_close'] = df_rate_hist['rate_close'].apply(lambda x: x * 1000.0 if x < 1000.0 else x)
-                df_rate_hist.loc[(df_rate_hist['rate_close'] < 15000.0) | (df_rate_hist['rate_close'] > 28000.0), 'rate_close'] = np.nan
-                df_rate_hist['rate_close'] = df_rate_hist['rate_close'].ffill().bfill().fillna(usd_vnd_rate)
-                usd_vnd_rate = float(df_rate_hist['rate_close'].iloc[-1])
-        except Exception as ex:
-            print(f"Error fetching USDVND: {ex}")
+        start_date = (datetime.datetime.now() - datetime.timedelta(days=180)).strftime("%Y-%m-%d")
+        end_date = (datetime.datetime.now() + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+        from src.data_loader import fetch_and_prepare_data
+        df = fetch_and_prepare_data(stock.ticker, start_date=start_date, end_date=end_date, sentiment_engine="vader")
+        
+        if df.empty:
+            raise HTTPException(status_code=500, detail="Không thể tải và chuẩn bị dữ liệu giao dịch mới nhất")
             
-        # Convert prices to VND if US stock
-        if "VNM" not in stock.ticker.upper():
-            if not df_rate_hist.empty:
-                raw_df = raw_df.merge(df_rate_hist, left_index=True, right_index=True, how='left')
-                raw_df['rate_close'] = raw_df['rate_close'].ffill().bfill().fillna(usd_vnd_rate)
-                for col in ['open', 'high', 'low', 'close']:
-                    raw_df[col] = raw_df[col] * raw_df['rate_close']
-            else:
-                for col in ['open', 'high', 'low', 'close']:
-                    raw_df[col] = raw_df[col] * usd_vnd_rate
-        else:
-            # For VNM, convert values < 1000 to full VND
-            for col in ['open', 'high', 'low', 'close']:
-                raw_df[col] = raw_df[col].apply(lambda x: x * 1000.0 if x < 1000.0 else x)
-                
-        raw_df = raw_df.reset_index()
-        raw_df.rename(columns={'Date': 'date'}, inplace=True)
-        raw_df['date'] = pd.to_datetime(raw_df['date'])
+        # Tính toán chỉ báo ATR 14 để đo lường rủi ro và vẽ khoảng an toàn
+        df['atr_14'] = ta.atr(df['high'], df['low'], df['close'], length=14)
         
-        # Load market index and VIX
-        market_ticker = "VNM" if "VNM" in stock.ticker.upper() else "^GSPC"
-        try:
-            m_df = yf.download(market_ticker, period="150d", progress=False)
-            if isinstance(m_df.columns, pd.MultiIndex):
-                m_df.columns = m_df.columns.droplevel(1)
-            m_df.columns = [col.lower() for col in m_df.columns]
-            m_df = m_df[['close']].rename(columns={'close': 'market_close'})
-            m_df['market_return'] = m_df['market_close'].pct_change()
-            raw_df = pd.merge(raw_df, m_df[['market_return']], left_on='date', right_index=True, how='left')
-        except Exception:
-            raw_df['market_return'] = 0.0
-            
-        try:
-            vix_df = yf.download("^VIX", period="150d", progress=False)
-            if isinstance(vix_df.columns, pd.MultiIndex):
-                vix_df.columns = vix_df.columns.droplevel(1)
-            vix_df.columns = [col.lower() for col in vix_df.columns]
-            vix_df = vix_df[['close']].rename(columns={'close': 'vix_close'})
-            raw_df = pd.merge(raw_df, vix_df, left_on='date', right_index=True, how='left')
-        except Exception:
-            raw_df['vix_close'] = 20.0
-
-        try:
-            tnx_df = yf.download("^TNX", period="150d", progress=False)
-            if isinstance(tnx_df.columns, pd.MultiIndex):
-                tnx_df.columns = tnx_df.columns.droplevel(1)
-            tnx_df.columns = [col.lower() for col in tnx_df.columns]
-            tnx_df = tnx_df[['close']].rename(columns={'close': 'bond_yield_10y'})
-            raw_df = pd.merge(raw_df, tnx_df, left_on='date', right_index=True, how='left')
-        except Exception:
-            raw_df['bond_yield_10y'] = 4.0
-
-        try:
-            dxy_df = yf.download("DX-Y.NYB", period="150d", progress=False)
-            if isinstance(dxy_df.columns, pd.MultiIndex):
-                dxy_df.columns = dxy_df.columns.droplevel(1)
-            dxy_df.columns = [col.lower() for col in dxy_df.columns]
-            dxy_df['dollar_index_change'] = dxy_df['close'].pct_change()
-            raw_df = pd.merge(raw_df, dxy_df[['dollar_index_change']], left_on='date', right_index=True, how='left')
-        except Exception:
-            raw_df['dollar_index_change'] = 0.0
-            
-        # Merge news sentiment features
-        try:
-            from src.news_sentiment import get_news_sentiment_features
-            df_sent_pred = get_news_sentiment_features(stock.ticker, raw_df['date'].dt.strftime('%Y-%m-%d').tolist(), engine='vader')
-            df_sent_pred['date'] = pd.to_datetime(df_sent_pred['date'])
-            raw_df = pd.merge(raw_df, df_sent_pred, on='date', how='left')
-        except Exception:
-            raw_df['sentiment_score'] = 0.0
-            raw_df['news_volume'] = 0.0
-            
-        raw_df['sentiment_score'] = raw_df['sentiment_score'].fillna(0.0)
-        raw_df['news_volume'] = raw_df['news_volume'].fillna(0.0)
-        raw_df['market_return'] = raw_df['market_return'].fillna(0.0)
-        raw_df['vix_close'] = raw_df['vix_close'].fillna(20.0)
-        raw_df['bond_yield_10y'] = raw_df['bond_yield_10y'].fillna(4.0)
-        raw_df['dollar_index_change'] = raw_df['dollar_index_change'].fillna(0.0)
-        
-        # Apply Kalman Filter to smooth price
-        try:
-            from src.features import kalman_filter
-        except ImportError:
-            from features import kalman_filter
-        raw_df['close_smoothed'] = kalman_filter(raw_df['close'])
-        
-        # Calculate indicators on close_smoothed
-        raw_df.set_index('date', inplace=True)
-        raw_df['rsi_14'] = ta.rsi(raw_df['close_smoothed'], length=14)
-        raw_df['rsi_lag1'] = raw_df['rsi_14'].shift(1)
-        macd_df = ta.macd(raw_df['close_smoothed'], fast=12, slow=26, signal=9)
-        raw_df = pd.concat([raw_df, macd_df], axis=1)
-        
-        macd_cols_to_drop = [col for col in macd_df.columns if 'MACDh' in col or 'MACDs' in col]
-        raw_df = raw_df.drop(columns=macd_cols_to_drop)
-        macd_col_name = [col for col in raw_df.columns if 'MACD_12_26_9' in col or 'macd' in col.lower()][0]
-        raw_df.rename(columns={macd_col_name: 'macd_12_26_9'}, inplace=True)
-        
-        raw_df['volatility_20'] = raw_df['close_smoothed'].pct_change().rolling(window=20).std()
-        raw_df['close_lag1'] = raw_df['close_smoothed'].shift(1)
-        raw_df['close_lag2'] = raw_df['close_smoothed'].shift(2)
-        raw_df['close_lag3'] = raw_df['close_smoothed'].shift(3)
-        raw_df['open_lag1'] = raw_df['open'].shift(1)
-        raw_df['open_lag2'] = raw_df['open'].shift(2)
-        raw_df['volume_change'] = raw_df['volume'].pct_change()
-        raw_df['intraday_return'] = (raw_df['close'] - raw_df['open']) / raw_df['open']
-        
-        bb_df = ta.bbands(raw_df['close_smoothed'], length=20, std=2)
-        raw_df['bb_lower'] = bb_df.iloc[:, 0]
-        raw_df['bb_middle'] = bb_df.iloc[:, 1]
-        raw_df['bb_upper'] = bb_df.iloc[:, 2]
-        raw_df['atr_14'] = ta.atr(raw_df['high'], raw_df['low'], raw_df['close_smoothed'], length=14)
-        raw_df['ema_14'] = ta.ema(raw_df['close_smoothed'], length=14)
-        raw_df['roc_10'] = ta.roc(raw_df['close_smoothed'], length=10)
-        
-        adx_raw = ta.adx(raw_df['high'], raw_df['low'], raw_df['close_smoothed'], length=14)
-        raw_df['adx_14'] = adx_raw.iloc[:, 0]
-        
-        # Clean null values and calculate stationary ratios using DataTransformer
         transformer = DataTransformer(time_steps=LOOKBACK_WINDOW)
-        raw_df_reset = raw_df.reset_index()
-        raw_df_transformed = transformer.transform_df(raw_df_reset)
+        df = df.sort_values('date').reset_index(drop=True)
         
-        recent_features = raw_df_transformed.tail(LOOKBACK_WINDOW)
+        recent_features = df[transformer.feature_cols].tail(LOOKBACK_WINDOW)
         if len(recent_features) < LOOKBACK_WINDOW:
             raise HTTPException(status_code=500, detail=f"Không đủ dữ liệu {LOOKBACK_WINDOW} ngày để tạo đặc trưng")
             
-        # Transform and predict
+        raw_df = df.tail(LOOKBACK_WINDOW).copy()
+        raw_df.set_index('date', inplace=True)
+        
+        # Scale inputs
         recent_scaled = scaler_X.transform(recent_features.values)
         X_predict = recent_scaled.reshape(1, LOOKBACK_WINDOW, len(FEATURE_COLS))
         
-        # Trích xuất đặc trưng lai (32 chiều ẩn từ Transformer + 22 chiều chỉ báo ngày hiện tại) cho mô hình Hybrid XGBoost
+        # Trích xuất đặc trưng lai (32 chiều ẩn từ Transformer + 34 chiều chỉ báo ngày hiện tại) cho mô hình Hybrid XGBoost
         feature_extractor = tf.keras.models.Model(
             inputs=transformer_model.input,
-            outputs=transformer_model.layers[-2].output
+            outputs=transformer_model.get_layer("latent_embedding").output
         )
         X_predict_latent = feature_extractor.predict(X_predict, verbose=0)
         X_predict_today = X_predict[0, -1, :].reshape(1, -1)
@@ -311,8 +188,9 @@ def trigger_prediction(ticker: str, db: Session = Depends(get_db)):
         xgb_pred_scaled = xgb_model.predict(X_predict_hybrid).reshape(-1, 1)
         xgb_return_future = scaler_y.inverse_transform(xgb_pred_scaled)[0][0]
         
-        trans_pred_scaled = transformer_model.predict(X_predict, verbose=0)
-        trans_return_future = scaler_y.inverse_transform(trans_pred_scaled)[0][0]
+        trans_pred_output = transformer_model.predict(X_predict, verbose=0)
+        trans_scaled = trans_pred_output[0] if isinstance(trans_pred_output, list) else trans_pred_output
+        trans_return_future = scaler_y.inverse_transform(trans_scaled)[0][0]
 
         
         last_close = float(raw_df['close'].iloc[-1])

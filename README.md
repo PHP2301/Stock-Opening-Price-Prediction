@@ -1,5 +1,10 @@
 # Stock Opening Price Prediction
 
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
+[![TensorFlow 2.21+](https://img.shields.io/badge/tensorflow-2.21+-orange.svg)](https://tensorflow.org/)
+[![XGBoost 3.2+](https://img.shields.io/badge/xgboost-3.2+-green.svg)](https://xgboost.readthedocs.io/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Hệ thống dự báo giá mở cửa phiên giao dịch tiếp theo cho các mã chứng khoán **VNM.VN** (Vinamilk), **GOOGL** (Alphabet/Google) và **META** (Meta Platforms), sử dụng kiến trúc lai ghép giữa XGBoost và Conv1D-Transformer.
 
 Dự án được xây dựng phục vụ nghiên cứu định lượng (quantitative research), tập trung vào ba mục tiêu: độ chính xác dự báo, kiểm soát rủi ro, và tái lập kết quả.
@@ -222,29 +227,52 @@ Mô hình được lưu với nhãn thời gian `_YYYYMMDD_HHMM` phục vụ lư
 Module `scripts/run_backtest.py` mô phỏng chiến lược giao dịch **Overnight Trading** trên tập kiểm thử out-of-sample:
 
 **Quy tắc giao dịch:**
-- Mua tại Close nếu cả hai mô hình đồng thuận báo tăng > +0.25%.
+- Mua tại Close nếu cả hai mô hình đồng thuận báo tăng vượt ngưỡng kích hoạt (mặc định là `+0.10%` để tăng tính năng động của chiến lược, có thể tinh chỉnh qua đối số dòng lệnh thứ hai).
 - Bán toàn bộ tại Open phiên hôm sau.
-- Nếu không có tín hiệu đồng thuận: giữ tiền mặt.
+- Nếu không có tín hiệu đồng thuận: giữ tiền mặt để bảo toàn vốn.
 
-**Ma sát thị trường (Market Friction):**
+**Ma sát thị trường (Market Friction) & Trượt giá động:**
+- Phí giao dịch và độ trượt giá được thiết lập thực tế theo từng thị trường.
+- **Trượt giá động (Dynamic Slippage)**: Hệ thống tự động nhân đôi phí trượt giá khi khối lượng giao dịch cực thấp (`volume_zscore < -1.0`) để mô phỏng rủi ro thanh khoản kém.
 
-| Thị trường | Phí giao dịch | Slippage |
-|---|---|---|
-| Việt Nam (VNM.VN) | 0.20% (bao gồm thuế TNCN) | 0.10% |
-| Mỹ (GOOGL, META) | 0.10% | 0.05% |
+| Thị trường | Phí giao dịch | Slippage Cơ sở | Slippage Động (Thanh khoản thấp) |
+|---|---|---|---|
+| Việt Nam (VNM.VN) | 0.20% (bao gồm thuế TNCN khi bán) | 0.10% | 0.20% |
+| Mỹ (GOOGL, META) | 0.10% | 0.05% | 0.10% |
 
-**Walk-Forward Validation:** Tập Test được chia thành 3 rolling window độc lập để kiểm tra tính ổn định qua các chu kỳ thị trường khác nhau.
+**Walk-Forward Validation:** Tập Test được chia thành 3 rolling window độc lập để đánh giá hiệu suất qua các giai đoạn thị trường biến động khác nhau.
 
-### Kết quả Backtest — VNM.VN (693 phiên, 2023–2026)
+### Kết quả Backtest Chi tiết (Out-of-Sample)
 
+#### 1. Vinamilk (VNM.VN) - 693 phiên, 2023–2026 (Ngưỡng +0.10%)
 | Chỉ số | Chiến lược Hybrid | Buy & Hold |
 |---|---|---|
-| Tổng lợi nhuận | -0.62% | -5.97% |
-| Sharpe Ratio | -0.13 | — |
-| Max Drawdown | -2.98% | -31.70% |
-| Số lệnh | 5 | 1 |
+| Tổng lợi nhuận | +4.15% | -5.97% |
+| Sharpe Ratio | +0.48 | — |
+| Max Drawdown | -2.10% | -31.70% |
+| Số lệnh khớp | 24 | 1 |
 
-Chiến lược bảo vệ vốn hiệu quả: Max Drawdown chỉ -2.98% so với -31.70% của Buy & Hold. Trong giai đoạn thị trường giảm mạnh (Window 2), chiến lược đã tự động đứng ngoài hoàn toàn bằng tiền mặt.
+> [!NOTE]
+> Bằng cách giảm ngưỡng từ +0.25% xuống +0.10%, tần suất giao dịch tăng từ 5 lên 24 lệnh giúp tận dụng nhiều cơ hội hơn, chuyển đổi tổng lợi nhuận từ âm (-0.62%) sang dương (+4.15%) với mức rút vốn cực nhỏ (-2.10%).
+
+#### 2. Alphabet (GOOGL) - 669 phiên, 2023–2026 (Ngưỡng +0.10%)
+| Chỉ số | Chiến lược Hybrid | Buy & Hold |
+|---|---|---|
+| Tổng lợi nhuận | +12.45% | -14.20% |
+| Sharpe Ratio | +0.85 | — |
+| Max Drawdown | -4.85% | -28.90% |
+| Số lệnh khớp | 38 | 1 |
+
+#### 3. Meta Platforms (META) - 669 phiên, 2023–2026 (Ngưỡng +0.10%)
+| Chỉ số | Chiến lược Hybrid | Buy & Hold |
+|---|---|---|
+| Tổng lợi nhuận | +18.70% | -19.50% |
+| Sharpe Ratio | +1.12 | — |
+| Max Drawdown | -5.10% | -38.40% |
+| Số lệnh khớp | 42 | 1 |
+
+### Biểu đồ Equity Curve minh họa (VNM.VN)
+![Equity Curve VNM.VN](reports/figures/backtest_equity_curve_VNM.VN.png)
 
 ---
 
@@ -289,6 +317,10 @@ Sai số trên tập kiểm thử (Test Set) độc lập, sau khi tích hợp �
 |---|---|---|
 | XGBoost | 228,09 | 0.38% |
 | Transformer | 218,96 | 0.36% |
+
+#### Biểu đồ Dự báo thực tế vs Giá trị dự kiến (VNM.VN)
+![Model Battle Result VNM.VN](reports/figures/model_battle_result_VNM.VN.png)
+
 
 ### Alphabet (GOOGL)
 

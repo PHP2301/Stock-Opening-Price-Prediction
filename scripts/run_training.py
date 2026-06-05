@@ -106,7 +106,7 @@ def log_prediction_to_file(ticker, last_date, last_close, risk_level, risk_ratio
 def main():
     print("🚀 [HỆ THỐNG] Khởi động Pipeline Huấn luyện Mô hình Lai (Hybrid Transformer-XGBoost)...")
     
-    SENTIMENT_ENGINE = 'finbert'
+    SENTIMENT_ENGINE = 'vader'
     TICKERS = ["VNM.VN", "GOOGL", "META"]
     
     # Cho phép chọn ticker cụ thể qua command line
@@ -201,7 +201,6 @@ def main():
             fold_model = build_transformer(
                 input_shape=(X_train_i.shape[1], X_train_i.shape[2]),
                 d_model=d_model,
-                num_heads=num_heads,
                 dropout_rate=dropout_rate,
                 learning_rate=learning_rate
             )
@@ -227,13 +226,12 @@ def main():
             fold_extractor = Model(inputs=fold_model.input, outputs=fold_model.get_layer("latent_embedding").output)
             X_train_latent_oof[val_idx] = fold_extractor.predict(X_va_fold, verbose=0)
             fold += 1
-
+ 
         # Huấn luyện mô hình Transformer chính (lưu trữ & dự báo live)
         print(f"🤖 [TRAIN] Đang huấn luyện Transformer chính cho riêng {ticker}...")
         transformer_model = build_transformer(
             input_shape=(X_tr.shape[1], X_tr.shape[2]),
             d_model=d_model,
-            num_heads=num_heads,
             dropout_rate=dropout_rate,
             learning_rate=learning_rate
         )
@@ -265,13 +263,13 @@ def main():
         # Sử dụng 100% dữ liệu Train thô kết hợp đặc trưng OOF không rò rỉ dữ liệu để huấn luyện XGBoost
         print(f"🌳 [TRAIN] Đang huấn luyện mô hình lai XGBoost trên 100% dữ liệu OOF Train ({len(X_train_hybrid_all)} mẫu)...")
         xgb_model = build_xgboost_optimized(X_train_hybrid_all, y_train_i)
-
-
         
         # 3. ĐÁNH GIÁ KẾT QUẢ TRÊN TẬP KIỂM THỬ (TEST SET)
         split_idx = int(len(X_3D) * 0.8)
         df_align = df.iloc[transformer.time_steps:].reset_index(drop=True)
-        test_close_i = df_align.loc[split_idx:, 'close'].values[:len(X_test_i)]
+        # Căn chỉnh chỉ số bắt đầu sau Purge Gap (45 phiên)
+        test_start_idx = split_idx + 45
+        test_close_i = df_align.loc[test_start_idx:, 'close'].values[:len(X_test_i)]
         y_test_true_i = test_close_i * (1 + y_test_raw_i)
         
         # Trích xuất đặc trưng lai cho tập Test
@@ -289,7 +287,6 @@ def main():
         trans_scaled = trans_preds_output[0] if isinstance(trans_preds_output, list) else trans_preds_output
         trans_return = transformer.target_scaler.inverse_transform(trans_scaled).ravel()
         trans_preds = test_close_i * (1 + trans_return)
-        
         print(f"\n📊 BẢNG ĐÁNH GIÁ SAI SỐ CHO MÃ: {ticker}")
         evaluate_predictions(y_test_true_i, hybrid_xgb_preds, f"Hybrid XGBoost ({ticker})", ticker)
         evaluate_predictions(y_test_true_i, trans_preds, f"Transformer ({ticker})", ticker)

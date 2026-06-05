@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  web-api:
+    build: .
+    container_name: stock-prediction-api
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
+    volumes:
+      - ./models:/app/models
+      - ./data:/app/data
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/stocks"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

@@ -14,6 +14,39 @@ def format_vn(value):
     temp = temp.replace("TEMP", ".")
     return temp
 
+def calculate_days_before_tet(dates_series):
+    """
+    Tính toán số phiên giao dịch thực tế còn lại đến Tết Nguyên Đán (cáp tối đa 30 phiên).
+    """
+    tet_dates = pd.to_datetime([
+        "2010-02-14", "2011-02-03", "2012-01-23", "2013-02-10", "2014-01-31",
+        "2015-02-19", "2016-02-08", "2017-01-28", "2018-02-16", "2019-02-05",
+        "2020-01-25", "2021-02-12", "2022-02-01", "2023-01-22", "2024-02-10",
+        "2025-01-29", "2026-02-17"
+    ])
+    days_before = []
+    dates_list = pd.to_datetime(dates_series).tolist()
+    
+    tet_last_trading_days = []
+    for tet in tet_dates:
+        before_tet = [d for d in dates_list if d < tet]
+        if before_tet:
+            tet_last_trading_days.append(max(before_tet))
+        else:
+            tet_last_trading_days.append(None)
+            
+    for d in dates_list:
+        next_tets = [t for t in tet_last_trading_days if t is not None and t >= d]
+        if next_tets:
+            next_tet_last_trade = min(next_tets)
+            idx_d = dates_list.index(d)
+            idx_tet = dates_list.index(next_tet_last_trade)
+            diff = idx_tet - idx_d
+            days_before.append(min(diff, 30))
+        else:
+            days_before.append(30)
+    return days_before
+
 def get_realtime_usd_vnd_rate():
     """Tải tỷ giá USD/VND trực tuyến (realtime) từ Yahoo Finance và API công cộng."""
     # Thử yfinance trước
@@ -295,7 +328,8 @@ def fetch_and_prepare_data(ticker: str, start_date: str = "2015-01-01", end_date
     print("Khoi dong Feature Engineering: Tinh toan cac chi bao ky thuat...")
 
     # Tải chỉ số thị trường tương ứng làm tham chiếu vĩ mô
-    index_ticker = "VNM" if "VNM" in ticker.upper() else "^GSPC"
+    is_vn = ".VN" in ticker.upper()
+    index_ticker = "VNM" if is_vn else "^IXIC"
     try:
         print(f"  [MARKET] Dang tai chi so thi truong {index_ticker} tu Yahoo Finance...")
         raw_index = yf.download(index_ticker, start=start_date, end=end_date, progress=False)
@@ -383,44 +417,57 @@ def fetch_and_prepare_data(ticker: str, start_date: str = "2015-01-01", end_date
     df = pd.merge(df, df_dxy, on='date', how='left')
     df['dollar_index_change'] = df['dollar_index_change'].fillna(0.0)
 
+    # Ghep usdvnd_change tu df_usd_vnd
+    if df_usd_vnd is not None and not df_usd_vnd.empty:
+        df_usd_vnd['usdvnd_change'] = df_usd_vnd['rate_close'].pct_change()
+        df = pd.merge(df, df_usd_vnd[['date', 'usdvnd_change']], on='date', how='left')
+    else:
+        df['usdvnd_change'] = 0.0
+    df['usdvnd_change'] = df['usdvnd_change'].fillna(0.0)
+
+    # Đồng bộ múi giờ (Timezone Alignment)
+    if is_vn:
+        df['vix_lag1'] = df['vix'].shift(1)
+        df['bond_yield_lag1'] = df['bond_yield_10y'].shift(1)
+        df['usdvnd_change'] = df['usdvnd_change'].shift(1)
+        df['vnindex_return_lag1'] = df['market_return'].shift(1)  # VNM ETF dịch trễ 1 ngày vì lệch múi giờ Mỹ
+    else:
+        df['vix_lag1'] = df['vix']
+        df['bond_yield_lag1'] = df['bond_yield_10y']
+        df['usdvnd_change'] = df['dollar_index_change']  # DXY cho US stock
+        df['vnindex_return_lag1'] = df['market_return']
+
+    df['vix_lag1'] = df['vix_lag1'].ffill().bfill().fillna(20.0)
+    df['bond_yield_lag1'] = df['bond_yield_lag1'].ffill().bfill().fillna(4.0)
+
+    # Calendar Features
+    df['day_of_week_sin'] = np.sin(2 * np.pi * df['date'].dt.dayofweek / 5)
+    df['day_of_week_cos'] = np.cos(2 * np.pi * df['date'].dt.dayofweek / 5)
+    df['month_sin'] = np.sin(2 * np.pi * df['date'].dt.month / 12)
+    df['month_cos'] = np.cos(2 * np.pi * df['date'].dt.month / 12)
+    
+    # is_quarter_end
+    df['quarter'] = (df['date'].dt.month - 1) // 3 + 1
+    df['year'] = df['date'].dt.year
+    df['is_quarter_end'] = 0
+    for _, group in df.groupby(['year', 'quarter']):
+        if len(group) >= 3:
+            df.loc[group.index[-3:], 'is_quarter_end'] = 1
+        else:
+            df.loc[group.index, 'is_quarter_end'] = 1
+            
+    # days_before_tet
+    if is_vn:
+        df['days_before_tet'] = calculate_days_before_tet(df['date'])
+    else:
+        df['days_before_tet'] = 30.0
+
     # Áp dụng Kalman Filter để làm mịn giá đóng cửa
     try:
         from src.features import kalman_filter
     except ImportError:
         from features import kalman_filter
     df['close_smoothed'] = kalman_filter(df['close'])
-
-    df['rsi_14'] = ta.rsi(df['close_smoothed'], length=14)
-    df['rsi_lag1'] = df['rsi_14'].shift(1)
-
-    macd_df = ta.macd(df['close_smoothed'], fast=12, slow=26, signal=9)
-    df = pd.concat([df, macd_df], axis=1)
-    macd_cols_to_drop = [col for col in macd_df.columns if 'MACDh' in col or 'MACDs' in col]
-    df = df.drop(columns=macd_cols_to_drop)
-
-    df['volatility_20']   = df['close_smoothed'].pct_change().rolling(window=20).std()
-    df['close_lag1']      = df['close_smoothed'].shift(1)
-    df['close_lag2']      = df['close_smoothed'].shift(2)
-    df['close_lag3']      = df['close_smoothed'].shift(3)
-    df['open_lag1']       = df['open'].shift(1)
-    df['open_lag2']       = df['open'].shift(2)
-    df['volume_change']   = df['volume'].pct_change()
-    df['intraday_return'] = (df['close'] - df['open']) / df['open']
-    
-    # Tinh toan Bollinger Bands (20, 2) va đặt tên cột tường minh trên giá mịn
-    bb_df = ta.bbands(df['close_smoothed'], length=20, std=2)
-    df['bb_lower'] = bb_df.iloc[:, 0]
-    df['bb_middle'] = bb_df.iloc[:, 1]
-    df['bb_upper'] = bb_df.iloc[:, 2]
-
-    # Tinh toan ATR (14)
-    df['atr_14'] = ta.atr(df['high'], df['low'], df['close_smoothed'], length=14)
-
-    # Tinh toan bo sung EMA (14), ROC (10), ADX (14) trên giá mịn
-    df['ema_14'] = ta.ema(df['close_smoothed'], length=14)
-    df['roc_10'] = ta.roc(df['close_smoothed'], length=10)
-    adx_df = ta.adx(df['high'], df['low'], df['close_smoothed'], length=14)
-    df['adx_14'] = adx_df.iloc[:, 0]
 
     # Tích hợp đặc trưng phân tích cảm xúc tin tức tài chính
     try:
@@ -443,12 +490,18 @@ def fetch_and_prepare_data(ticker: str, start_date: str = "2015-01-01", end_date
     df['target_return']   = (df['open'].shift(-1) - df['close']) / df['close']
     df['target_spread']   = (df['high'].shift(-1) - df['low'].shift(-1)) / df['close']
 
-
-    # Log phân tích tương quan đặc trưng trước và sau khi làm mịn Kalman
+    # Chạy DataTransformer để tính toán 34 đặc trưng nâng cao một cách nhất quán
     try:
-        log_feature_correlation_comparison(df, ticker)
-    except Exception as e:
-        print(f"  [WARNING] Không thể chạy phân tích tương quan Kalman: {e}")
+        from src.features import DataTransformer
+    except ImportError:
+        from features import DataTransformer
+    
+    transformer = DataTransformer()
+    df_feats = transformer.transform_df(df)
+    
+    # Merge các đặc trưng tính toán được vào DataFrame chính
+    for col in df_feats.columns:
+        df[col] = df_feats[col]
 
     df_cleaned = df.dropna().reset_index(drop=True)
 
@@ -480,7 +533,7 @@ if __name__ == "__main__":
             print(f"🔬 Đang tải thử mã: {ticker}")
             print(f"==============================")
             test_df = fetch_and_prepare_data(ticker, start_date="2010-01-01", end_date="2026-05-21")
-            cols_show = ['date', 'close', 'rsi_14', 'MACD_12_26_9', 'target_return']
+            cols_show = ['date', 'close', 'rsi_14', 'macd_ratio', 'target_return']
             print("\n--- 3 phien dau ---")
             print(test_df[cols_show].head(3).to_string(index=False))
             print("\n--- 3 phien cuoi ---")

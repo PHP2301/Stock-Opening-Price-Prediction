@@ -265,3 +265,27 @@ Dự báo XGBoost: 58.950,02 VNĐ (📈 TĂNG +0.60%) | Khoảng an toàn: [54.7
 Dự báo Transformer: 58.672,74 VNĐ (📈 TĂNG +0.12%) | Khoảng an toàn: [54.467,30 - 62.878,19] VNĐ
 --------------------------------------------------
 
+=== BẢN GHI DỰ BÁO (2026-06-06 04:16:08) ===
+Mã chứng khoán: VNM.VN
+Giá đóng cửa gần nhất (2026-06-05): 58.600,00 VNĐ
+Rủi ro biến động: Cao (Nguy hiểm - Biến động cực mạnh / Có Drama hoặc Tin tức lớn) 🔴 [CẢNH BÁO: HẠN CHẾ ĐẶT LỆNH KHỚP NGAY] (Tỷ lệ: 4.78%)
+Dự báo XGBoost: 59.123,99 VNĐ (📈 TĂNG +0.89%) | Khoảng an toàn: [54.918,55 - 63.329,44] VNĐ
+Dự báo Transformer: 58.699,92 VNĐ (📈 TĂNG +0.17%) | Khoảng an toàn: [54.494,47 - 62.905,36] VNĐ
+--------------------------------------------------
+
+=== BẢN GHI DỰ BÁO (2026-06-06 04:23:53) ===
+Mã chứng khoán: VNM.VN
+Giá đóng cửa gần nhất (2026-06-05): 58.600,00 VNĐ
+Rủi ro biến động: Cao (Nguy hiểm - Biến động cực mạnh / Có Drama hoặc Tin tức lớn) 🔴 [CẢNH BÁO: HẠN CHẾ ĐẶT LỆNH KHỚP NGAY] (Tỷ lệ: 4.78%)
+Dự báo XGBoost: 58.953,38 VNĐ (📈 TĂNG +0.60%) | Khoảng an toàn: [54.747,93 - 63.158,82] VNĐ
+Dự báo Transformer: 58.725,43 VNĐ (📈 TĂNG +0.21%) | Khoảng an toàn: [54.519,98 - 62.930,87] VNĐ
+--------------------------------------------------
+
+=== BẢN GHI DỰ BÁO (2026-06-06 04:25:34) ===
+Mã chứng khoán: VNM.VN
+Giá đóng cửa gần nhất (2026-06-05): 58.600,00 VNĐ
+Rủi ro biến động: Cao (Nguy hiểm - Biến động cực mạnh / Có Drama hoặc Tin tức lớn) 🔴 [CẢNH BÁO: HẠN CHẾ ĐẶT LỆNH KHỚP NGAY] (Tỷ lệ: 4.78%)
+Dự báo XGBoost: 59.003,23 VNĐ (📈 TĂNG +0.69%) | Khoảng an toàn: [54.797,79 - 63.208,68] VNĐ
+Dự báo Transformer: 58.735,97 VNĐ (📈 TĂNG +0.23%) | Khoảng an toàn: [54.530,52 - 62.941,41] VNĐ
+--------------------------------------------------
+
