@@ -289,3 +289,166 @@ Dự báo XGBoost: 59.003,23 VNĐ (📈 TĂNG +0.69%) | Khoảng an toàn: [54.7
 Dự báo Transformer: 58.735,97 VNĐ (📈 TĂNG +0.23%) | Khoảng an toàn: [54.530,52 - 62.941,41] VNĐ
 --------------------------------------------------
 
+=== BẢN GHI DỰ BÁO (2026-06-06 05:02:50) ===
+Mã chứng khoán: VNM.VN
+Giá đóng cửa gần nhất (2026-06-05): 58.600,00 VNĐ
+Rủi ro biến động: Cao (Nguy hiểm - Biến động cực mạnh / Có Drama hoặc Tin tức lớn) 🔴 [CẢNH BÁO: HẠN CHẾ ĐẶT LỆNH KHỚP NGAY] (Tỷ lệ: 4.78%)
+Dự báo XGBoost: 58.747,01 VNĐ (📈 TĂNG +0.25%) | Khoảng an toàn: [54.541,57 - 62.952,46] VNĐ
+Dự báo Transformer: 58.759,42 VNĐ (📈 TĂNG +0.27%) | Khoảng an toàn: [54.553,97 - 62.964,87] VNĐ
+--------------------------------------------------
+
+=== BẢN GHI DỰ BÁO (2026-06-06 13:25:53) ===
+Mã chứng khoán: VNM.VN
+Giá đóng cửa gần nhất (2026-06-04): 58.600,00 VNĐ
+Rủi ro biến động: Thấp (An toàn - Thị trường ổn định) 🟢 (Tỷ lệ: 1.36%)
+Dự báo Hybrid XGBoost (Mô hình lai - Kết hợp đặc trưng ẩn từ Transformer + chỉ báo kỹ thuật): 58.636,17 VNĐ (📈 TĂNG +0.06%) | Khoảng an toàn: [57.442,01 - 59.830,33] VNĐ
+Dự báo Transformer gốc (Mô hình mạng Attention phân nhánh dự báo độc lập): 58.755,56 VNĐ (📈 TĂNG +0.27%) | Khoảng an toàn: [57.561,40 - 59.949,72] VNĐ
+--------------------------------------------------
+=== BẢN GHI DỰ BÁO (2026-06-06 13:31:16) ===
+Mã chứng khoán: VNM.VN
+Giá đóng cửa gần nhất (2026-06-04): 58.600,00 VNĐ
+Rủi ro biến động: Thấp (An toàn - Thị trường ổn định) 🟢 (Tỷ lệ: 1.36%)
+Dự báo Hybrid XGBoost (Mô hình lai - Kết hợp đặc trưng ẩn từ Transformer + chỉ báo kỹ thuật): 58.636,17 VNĐ (📈 TĂNG (+0.06%)) | Khoảng an toàn: [57.442,01 - 59.830,33] VNĐ
+Dự báo Transformer gốc (Mô hình mạng Attention phân nhánh dự báo độc lập): 58.755,56 VNĐ (📈 TĂNG (+0.27%)) | Khoảng an toàn: [57.561,40 - 59.949,72] VNĐ
+--------------------------------------------------
+
+=== BẢN GHI DỰ BÁO (2026-06-06 13:38:43) ===
+Mã chứng khoán: VNM.VN
+Giá đóng cửa gần nhất (2026-06-05): 58.400,00 VNĐ
+Rủi ro biến động: Cao (Nguy hiểm - Biến động cực mạnh / Có Drama hoặc Tin tức lớn) 🔴 [CẢNH BÁO: HẠN CHẾ ĐẶT LỆNH KHỚP NGAY] (Tỷ lệ: 4.84%)
+Dự báo Hybrid XGBoost (Mô hình lai - Kết hợp đặc trưng ẩn từ Transformer + chỉ báo kỹ thuật): 58.532,24 VNĐ (📈 TĂNG +0.23%) | Khoảng an toàn: [54.294,65 - 62.769,83] VNĐ
+Dự báo Transformer gốc (Mô hình mạng Attention phân nhánh dự báo độc lập): 58.299,99 VNĐ (📉 GIẢM -0.17%) | Khoảng an toàn: [54.062,40 - 62.537,57] VNĐ
+--------------------------------------------------
+
+=== BẢN GHI DỰ BÁO (2026-06-06 13:49:07) ===
+Mã chứng khoán: GOOGL
+Giá đóng cửa gần nhất (2026-06-05): 9.683.125,72 VNĐ ($368.60 USD)
+Rủi ro biến động: Cao (Nguy hiểm - Biến động cực mạnh / Có Drama hoặc Tin tức lớn) 🔴 [CẢNH BÁO: HẠN CHẾ ĐẶT LỆNH KHỚP NGAY] (Tỷ lệ: 10.45%)
+Tỷ giá USD/VND quy đổi: 1 USD = 26.270,00 VNĐ
+Dự báo Hybrid XGBoost (Mô hình lai - Kết hợp đặc trưng ẩn từ Transformer + chỉ báo kỹ thuật): 9.692.868,17 VNĐ ($368.97 USD) (📈 TĂNG +0.10%) | Khoảng an toàn: [8.174.679,21 - 11.211.057,13] VNĐ
+Dự báo Transformer gốc (Mô hình mạng Attention phân nhánh dự báo độc lập): 9.637.953,77 VNĐ ($366.88 USD) (📉 GIẢM -0.47%) | Khoảng an toàn: [8.119.764,81 - 11.156.142,73] VNĐ
+--------------------------------------------------
+
+=== BẢN GHI DỰ BÁO (2026-06-06 13:59:56) ===
+Mã chứng khoán: META
+Giá đóng cửa gần nhất (2026-06-05): 15.581.075,00 VNĐ ($593.11 USD)
+Rủi ro biến động: Cao (Nguy hiểm - Biến động cực mạnh / Có Drama hoặc Tin tức lớn) 🔴 [CẢNH BÁO: HẠN CHẾ ĐẶT LỆNH KHỚP NGAY] (Tỷ lệ: 5.07%)
+Tỷ giá USD/VND quy đổi: 1 USD = 26.270,00 VNĐ
+Dự báo Hybrid XGBoost (Mô hình lai - Kết hợp đặc trưng ẩn từ Transformer + chỉ báo kỹ thuật): 15.621.715,11 VNĐ ($594.66 USD) (📈 TĂNG +0.26%) | Khoảng an toàn: [14.437.186,56 - 16.806.243,66] VNĐ
+Dự báo Transformer gốc (Mô hình mạng Attention phân nhánh dự báo độc lập): 15.471.634,61 VNĐ ($588.95 USD) (📉 GIẢM -0.70%) | Khoảng an toàn: [14.287.106,06 - 16.656.163,16] VNĐ
+--------------------------------------------------
+
+=== BẢN GHI DỰ BÁO (2026-06-06 14:03:12) ===
+Mã chứng khoán: VNM.VN
+Giá đóng cửa gần nhất (2026-06-04): 58.600,00 VNĐ
+Rủi ro biến động: Thấp (An toàn - Thị trường ổn định) 🟢 (Tỷ lệ: 1.36%)
+Dự báo Hybrid XGBoost (Mô hình lai - Kết hợp đặc trưng ẩn từ Transformer + chỉ báo kỹ thuật): 58.642,62 VNĐ (📈 TĂNG (+0.07%)) | Khoảng an toàn: [57.448,46 - 59.836,78] VNĐ
+Dự báo Transformer gốc (Mô hình mạng Attention phân nhánh dự báo độc lập): 58.705,06 VNĐ (📈 TĂNG (+0.18%)) | Khoảng an toàn: [57.510,90 - 59.899,22] VNĐ
+--------------------------------------------------
+
+=== BẢN GHI DỰ BÁO (2026-06-07 02:38:15) ===
+Mã chứng khoán: VNM.VN
+Giá đóng cửa gần nhất (2026-06-05): 58.400,00 VNĐ
+Rủi ro biến động: Cao (Nguy hiểm - Biến động cực mạnh / Có Drama hoặc Tin tức lớn) 🔴 [CẢNH BÁO: HẠN CHẾ ĐẶT LỆNH KHỚP NGAY] (Tỷ lệ: 4.84%)
+Dự báo Hybrid XGBoost (Mô hình lai - Kết hợp đặc trưng ẩn từ Transformer + chỉ báo kỹ thuật): 58.474,83 VNĐ (📈 TĂNG +0.13%) | Khoảng an toàn: [54.237,24 - 62.712,41] VNĐ
+Dự báo Transformer gốc (Mô hình mạng Attention phân nhánh dự báo độc lập): 58.298,48 VNĐ (📉 GIẢM -0.17%) | Khoảng an toàn: [54.060,89 - 62.536,07] VNĐ
+--------------------------------------------------
+
+=== BẢN GHI DỰ BÁO (2026-06-07 02:47:49) ===
+Mã chứng khoán: GOOGL
+Giá đóng cửa gần nhất (2026-06-05): 9.683.125,72 VNĐ ($368.60 USD)
+Rủi ro biến động: Cao (Nguy hiểm - Biến động cực mạnh / Có Drama hoặc Tin tức lớn) 🔴 [CẢNH BÁO: HẠN CHẾ ĐẶT LỆNH KHỚP NGAY] (Tỷ lệ: 10.45%)
+Tỷ giá USD/VND quy đổi: 1 USD = 26.270,00 VNĐ
+Dự báo Hybrid XGBoost (Mô hình lai - Kết hợp đặc trưng ẩn từ Transformer + chỉ báo kỹ thuật): 9.684.321,59 VNĐ ($368.65 USD) (📈 TĂNG +0.01%) | Khoảng an toàn: [8.166.132,63 - 11.202.510,55] VNĐ
+Dự báo Transformer gốc (Mô hình mạng Attention phân nhánh dự báo độc lập): 9.638.018,41 VNĐ ($366.88 USD) (📉 GIẢM -0.47%) | Khoảng an toàn: [8.119.829,45 - 11.156.207,37] VNĐ
+--------------------------------------------------
+
+=== BẢN GHI DỰ BÁO (2026-06-07 02:52:50) ===
+Mã chứng khoán: META
+Giá đóng cửa gần nhất (2026-06-05): 15.581.075,00 VNĐ ($593.11 USD)
+Rủi ro biến động: Cao (Nguy hiểm - Biến động cực mạnh / Có Drama hoặc Tin tức lớn) 🔴 [CẢNH BÁO: HẠN CHẾ ĐẶT LỆNH KHỚP NGAY] (Tỷ lệ: 5.07%)
+Tỷ giá USD/VND quy đổi: 1 USD = 26.270,00 VNĐ
+Dự báo Hybrid XGBoost (Mô hình lai - Kết hợp đặc trưng ẩn từ Transformer + chỉ báo kỹ thuật): 15.633.145,60 VNĐ ($595.09 USD) (📈 TĂNG +0.33%) | Khoảng an toàn: [14.448.617,05 - 16.817.674,15] VNĐ
+Dự báo Transformer gốc (Mô hình mạng Attention phân nhánh dự báo độc lập): 15.471.619,75 VNĐ ($588.95 USD) (📉 GIẢM -0.70%) | Khoảng an toàn: [14.287.091,20 - 16.656.148,30] VNĐ
+--------------------------------------------------
+
+=== BẢN GHI DỰ BÁO (2026-06-07 03:03:36) ===
+Mã chứng khoán: VNM.VN
+Giá đóng cửa gần nhất (2026-06-05): 58.400,00 VNĐ
+Rủi ro biến động: Cao (Nguy hiểm - Biến động cực mạnh / Có Drama hoặc Tin tức lớn) 🔴 [CẢNH BÁO: HẠN CHẾ ĐẶT LỆNH KHỚP NGAY] (Tỷ lệ: 4.84%)
+Dự báo Hybrid XGBoost (Mô hình lai - Kết hợp đặc trưng ẩn từ Transformer + chỉ báo kỹ thuật): 58.477,89 VNĐ (📈 TĂNG +0.13%) | Khoảng an toàn: [54.240,30 - 62.715,48] VNĐ
+Dự báo Transformer gốc (Mô hình mạng Attention phân nhánh dự báo độc lập): 58.298,48 VNĐ (📉 GIẢM -0.17%) | Khoảng an toàn: [54.060,89 - 62.536,06] VNĐ
+--------------------------------------------------
+
+=== DỰ BÁO (2026-06-07 03:23:36) ===
+Mã: VNM.VN
+Đóng cửa (2026-06-05): 58.400,00 VNĐ
+Rủi ro: Thấp 🟢 (1.21%)
+XGBoost : 59.654,51 VNĐ (📈 TĂNG +2.15%) | [58.593,79 - 60.715,22]
+Transformer: 58.434,82 VNĐ (📈 TĂNG +0.06%) | [57.374,10 - 59.495,53]
+--------------------------------------------------
+
+=== DỰ BÁO (2026-06-07 03:24:07) ===
+Mã: GOOGL
+Đóng cửa (2026-06-05): 9.683.125,72 VNĐ
+Rủi ro: Trung bình 🟡 (2.56%)
+XGBoost : 9.707.930,00 VNĐ (📈 TĂNG +0.26%) | [9.335.390,00 - 10.080.470,00]
+Transformer: 9.693.263,00 VNĐ (📈 TĂNG +0.10%) | [9.320.723,00 - 10.065.803,00]
+--------------------------------------------------
+
+=== DỰ BÁO (2026-06-07 03:24:58) ===
+Mã: META
+Đóng cửa (2026-06-05): 15.581.075,00 VNĐ
+Rủi ro: Cao 🔴 [CẢNH BÁO] (3.14%)
+XGBoost : 15.436.066,00 VNĐ (📉 GIẢM -0.93%) | [14.703.201,00 - 16.168.931,00]
+Transformer: 15.644.855,00 VNĐ (📈 TĂNG +0.41%) | [14.911.990,00 - 16.377.720,00]
+--------------------------------------------------
+
+=== DỰ BÁO (2026-06-07 03:25:47) ===
+Mã: VNM.VN
+Đóng cửa (2026-06-05): 58.400,00 VNĐ
+Rủi ro: Thấp 🟢 (1.21%)
+XGBoost : 59.656,08 VNĐ (📈 TĂNG +2.15%) | [58.595,36 - 60.716,79]
+Transformer: 58.434,82 VNĐ (📈 TĂNG +0.06%) | [57.374,10 - 59.495,53]
+--------------------------------------------------
+
+=== DỰ BÁO (2026-06-07 03:26:41) ===
+Mã: GOOGL
+Đóng cửa (2026-06-05): 9.683.125,72 VNĐ
+Rủi ro: Trung bình 🟡 (2.56%)
+XGBoost : 9.712.979,00 VNĐ (📈 TĂNG +0.31%) | [9.340.439,00 - 10.085.519,00]
+Transformer: 9.693.263,00 VNĐ (📈 TĂNG +0.10%) | [9.320.723,00 - 10.065.803,00]
+--------------------------------------------------
+
+=== DỰ BÁO (2026-06-07 03:27:38) ===
+Mã: META
+Đóng cửa (2026-06-05): 15.581.075,00 VNĐ
+Rủi ro: Cao 🔴 [CẢNH BÁO] (3.14%)
+XGBoost : 15.447.477,00 VNĐ (📉 GIẢM -0.86%) | [14.714.612,00 - 16.180.342,00]
+Transformer: 15.644.855,00 VNĐ (📈 TĂNG +0.41%) | [14.911.990,00 - 16.377.720,00]
+--------------------------------------------------
+
+=== DỰ BÁO (2026-06-07 03:28:08) ===
+Mã: VNM.VN
+Đóng cửa (2026-06-05): 58.400,00 VNĐ
+Rủi ro: Thấp 🟢 (1.21%)
+XGBoost : 59.656,08 VNĐ (📈 TĂNG +2.15%) | [58.595,36 - 60.716,79]
+Transformer: 58.434,82 VNĐ (📈 TĂNG +0.06%) | [57.374,10 - 59.495,53]
+--------------------------------------------------
+
+=== DỰ BÁO (2026-06-07 03:28:58) ===
+Mã: GOOGL
+Đóng cửa (2026-06-05): 9.683.125,72 VNĐ
+Rủi ro: Trung bình 🟡 (2.56%)
+XGBoost : 9.712.939,00 VNĐ (📈 TĂNG +0.31%) | [9.340.399,00 - 10.085.479,00]
+Transformer: 9.693.263,00 VNĐ (📈 TĂNG +0.10%) | [9.320.723,00 - 10.065.803,00]
+--------------------------------------------------
+
+=== DỰ BÁO (2026-06-07 03:30:01) ===
+Mã: META
+Đóng cửa (2026-06-05): 15.581.075,00 VNĐ
+Rủi ro: Cao 🔴 [CẢNH BÁO] (3.14%)
+XGBoost : 15.446.981,00 VNĐ (📉 GIẢM -0.86%) | [14.714.116,00 - 16.179.846,00]
+Transformer: 15.644.855,00 VNĐ (📈 TĂNG +0.41%) | [14.911.990,00 - 16.377.720,00]
+--------------------------------------------------
+

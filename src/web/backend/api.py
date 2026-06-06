@@ -145,7 +145,8 @@ def trigger_prediction(ticker: str, db: Session = Depends(get_db)):
                 'TimeDecayAttention': TimeDecayAttention,
                 'MultiTaskModel': MultiTaskModel,
                 'UncertaintyWeightsLayer': UncertaintyWeightsLayer
-            }
+            },
+            safe_mode=False
         )
         
         # Tải và tiền xử lý dữ liệu bằng data loader đồng bộ
@@ -174,6 +175,9 @@ def trigger_prediction(ticker: str, db: Session = Depends(get_db)):
         # Scale inputs
         recent_scaled = scaler_X.transform(recent_features.values)
         X_predict = recent_scaled.reshape(1, LOOKBACK_WINDOW, len(FEATURE_COLS))
+        
+        # Gọi mô hình với dữ liệu để khởi tạo thuộc tính input/output của đồ thị Functional
+        _ = transformer_model(X_predict)
         
         # Trích xuất đặc trưng lai (32 chiều ẩn từ Transformer + 34 chiều chỉ báo ngày hiện tại) cho mô hình Hybrid XGBoost
         feature_extractor = tf.keras.models.Model(

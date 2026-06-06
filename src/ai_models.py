@@ -5,7 +5,6 @@ import tensorflow as tf
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Dense, Dropout, Input, MultiHeadAttention, LayerNormalization, Flatten, Conv1D, Bidirectional, GRU, Multiply
 from xgboost import XGBRegressor
-
 # ==========================================
 # 1. MÔ HÌNH XGBoost (Cần làm phẳng dữ liệu 3D thành 2D)
 # ==========================================
@@ -38,7 +37,7 @@ def build_xgboost_optimized(X_train_flat, y_train):
         n_iter=6,
         cv=tscv, 
         scoring='neg_mean_absolute_error', 
-        n_jobs=-1,
+        n_jobs=1,
         random_state=42
     )
     
@@ -170,22 +169,33 @@ class UncertaintyWeightsLayer(tf.keras.layers.Layer):
         return super().get_config()
 
 
+try:
+    from keras.src.models.functional import Functional
+except ImportError:
+    Functional = tf.keras.models.Model
+
 @tf.keras.utils.register_keras_serializable()
-class MultiTaskModel(tf.keras.models.Model):
+class MultiTaskModel(Functional):
     """
     Mô hình học đa nhiệm tự động cân bằng trọng số tổn thất 
     (Kendall 2018 Uncertainty Weighting Loss) cho lợi nhuận (Return) và độ rộng giá (Spread).
     """
     def get_config(self):
-        from keras.src.models.functional import Functional
-        return Functional.get_config(self)
+        try:
+            from keras.src.models.functional import Functional
+            return Functional.get_config(self)
+        except ImportError:
+            return super().get_config()
 
     @classmethod
     def from_config(cls, config, custom_objects=None):
-        from keras.src.models.functional import Functional
-        model = Functional.from_config(config, custom_objects=custom_objects)
-        model.__class__ = cls
-        return model
+        try:
+            from keras.src.models.functional import Functional
+            model = Functional.from_config(config, custom_objects=custom_objects)
+            model.__class__ = cls
+            return model
+        except ImportError:
+            return super().from_config(config, custom_objects=custom_objects)
         
     def train_step(self, data):
         x, y = data
