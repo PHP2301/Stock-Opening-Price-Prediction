@@ -56,7 +56,7 @@ SENTIMENT_ENGINE = 'finbert'   # hoặc 'vader' — phải giống run_training_
 
 # SỬA: Flag kiểm soát có train lại Transformer không
 # Đặt False khi đã chạy run_training_transformer.py và muốn giữ Transformer tốt nhất
-RETRAIN_TRANSFORMER = False
+RETRAIN_TRANSFORMER = os.environ.get("FORCE_RETRAIN", "1") == "1"
 
 
 def get_return_output(pred):
@@ -148,14 +148,18 @@ def main():
             dt.split_train_test_chronological(df, X_3D, y_3D, y_spread_3D, train_ratio=0.8)
 
         val_size = int(len(X_train_i) * 0.1)
-        if val_size > 0:
-            X_tr, y_tr = X_train_i[:-val_size], y_train_i[:-val_size]
+        purge = 45
+        if val_size > 0 and len(X_train_i) - val_size - purge > 0:
+            train_end = len(X_train_i) - val_size - purge
+            X_tr, y_tr = X_train_i[:train_end], y_train_i[:train_end]
             X_va, y_va = X_train_i[-val_size:], y_train_i[-val_size:]
-            y_tr_spread = y_train_spread_i[:-val_size]
+            y_tr_spread = y_train_spread_i[:train_end]
             y_va_spread = y_train_spread_i[-val_size:]
         else:
-            X_tr, y_tr, X_va, y_va = X_train_i, y_train_i, X_test_i, y_test_i
-            y_tr_spread, y_va_spread = y_train_spread_i, y_test_spread_i
+            X_tr, y_tr = X_train_i, y_train_i
+            X_va, y_va = X_test_i, y_test_i
+            y_tr_spread = y_train_spread_i
+            y_va_spread = y_test_spread_i
 
         # ── Load hyperparams ───────────────────────────────────────────
         d_model, num_heads, dropout_rate, learning_rate, batch_size = 128, 8, 0.3, 1e-4, 64
@@ -168,7 +172,7 @@ def main():
                     with open(path) as f:
                         p = json.load(f)
                     d_model      = p.get('d_model', d_model)
-                    num_heads    = p.get('num_heads', num_heads)
+                    num_heads    = p.get('num_heads', p.get('heads', num_heads))
                     dropout_rate = p.get('dropout_rate', dropout_rate)
                     learning_rate = p.get('learning_rate', learning_rate)
                     batch_size   = p.get('batch_size', batch_size)
@@ -186,10 +190,17 @@ def main():
         # ════════════════════════════════════════════════════════════════
         if not RETRAIN_TRANSFORMER and os.path.exists(trans_latest_path):
             print(f"♻️  [LOAD] Dùng Transformer đã train: {trans_latest_path}")
-            from src.ai_models import load_multitask_model
-            transformer_model = load_multitask_model(
+            from src.ai_models import PositionalEmbedding, TimeDecayAttention, UncertaintyWeightsLayer, MultiTaskModel
+            custom_objects = {
+                'PositionalEmbedding': PositionalEmbedding,
+                'TimeDecayAttention': TimeDecayAttention,
+                'UncertaintyWeightsLayer': UncertaintyWeightsLayer,
+                'MultiTaskModel': MultiTaskModel,
+            }
+            transformer_model = tf.keras.models.load_model(
                 trans_latest_path,
-                input_shape=(X_train_i.shape[1], X_train_i.shape[2]),
+                custom_objects=custom_objects,
+                safe_mode=False
             )
             # Load scalers đã lưu (nếu có) để đồng bộ
             feat_scaler_path = os.path.join(models_dir, f'feature_scaler_{ticker}.pkl')
@@ -317,16 +328,15 @@ def main():
 
         # Chỉ lưu Transformer nếu đã train lại
         if RETRAIN_TRANSFORMER or not os.path.exists(trans_latest_path):
-            from src.ai_models import save_multitask_model
-            save_multitask_model(transformer_model, os.path.join(models_dir, f'transformer_model_{ticker}_{timestamp}.keras'))
-            save_multitask_model(transformer_model, trans_latest_path)
+            transformer_model.save(os.path.join(models_dir, f'transformer_model_{ticker}_{timestamp}.keras'))
+            transformer_model.save(trans_latest_path)
             joblib.dump(dt.feature_scaler, os.path.join(models_dir, f'feature_scaler_{ticker}.pkl'))
             joblib.dump(dt.target_scaler,  os.path.join(models_dir, f'target_scaler_{ticker}.pkl'))
 
         print(f"💾 Lưu xong mô hình cho {ticker} (timestamp: {timestamp})")
 
         # ── Live prediction ──────────────────────────────────────────
-        print(f"\n🔮 Dự báo phiên kế tiếp — {ticker}...")
+        print(f"\n🔮 Dự báo giá đóng cửa 3 ngày tới (T+3) — {ticker}...")
         raw_df = yf.download(ticker, period="150d", progress=False)
         if raw_df.empty:
             print(f"  Không tải được dữ liệu live cho {ticker}")
@@ -462,7 +472,7 @@ def main():
         trans_pred_clean = get_return_output(trans_pred_live)
         trans_return_future = dt.target_scaler.inverse_transform(trans_pred_clean)[0][0]
 
-        last_close = float(raw_df['open'].dropna().iloc[-1])
+        last_close = float(raw_df['close'].dropna().iloc[-1])
         last_date  = raw_df.index[-1].strftime('%Y-%m-%d')
 
         xgb_val   = last_close * (1 + xgb_return_future)

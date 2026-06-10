@@ -61,39 +61,49 @@ def run_simulation(
     threshold_buy=0.0010, threshold_sell=-0.0010,
 ):
 
-    feature_extractor = Model(
-        inputs=transformer_model.inputs,
-        outputs=transformer_model.get_layer("latent_embedding").output,
-    )
+    xgb_returns = None
+    if xgb_model is not None:
+        feature_extractor = Model(
+            inputs=transformer_model.inputs,
+            outputs=transformer_model.get_layer("latent_embedding").output,
+        )
 
-    print("   [PREDICT] Đang chạy dự báo trên tập test...")
-    X_test_latent = feature_extractor.predict(X_test, verbose=0)
-    X_test_today  = X_test[:, -1, :]
-    X_test_hybrid = np.concatenate([X_test_latent, X_test_today], axis=1)
+        print("   [PREDICT] Đang chạy dự báo trên tập test...")
+        X_test_latent = feature_extractor.predict(X_test, verbose=0)
+        X_test_today  = X_test[:, -1, :]
+        X_test_hybrid = np.concatenate([X_test_latent, X_test_today], axis=1)
 
-    xgb_pred_scaled = xgb_model.predict(X_test_hybrid).reshape(-1, 1)
-    xgb_returns     = dt.target_scaler.inverse_transform(xgb_pred_scaled).ravel()
+        xgb_pred_scaled = xgb_model.predict(X_test_hybrid).reshape(-1, 1)
+        xgb_returns     = dt.target_scaler.inverse_transform(xgb_pred_scaled).ravel()
+    else:
+        print("   [PREDICT] Đang chạy dự báo trên tập test (chỉ dùng Transformer)...")
 
     trans_pred_raw   = transformer_model.predict(X_test, verbose=0)
     trans_pred_clean = get_return_output(trans_pred_raw)
     trans_returns    = dt.target_scaler.inverse_transform(trans_pred_clean).ravel()
 
     # Sanity check
-    assert np.abs(xgb_returns).max() < 0.20, \
-        f"[SANITY] XGBoost return bất thường: {np.abs(xgb_returns).max():.4f}"
+    if xgb_returns is not None:
+        assert np.abs(xgb_returns).max() < 0.20, \
+            f"[SANITY] XGBoost return bất thường: {np.abs(xgb_returns).max():.4f}"
     assert np.abs(trans_returns).max() < 0.20, \
         f"[SANITY] Transformer return bất thường: {np.abs(trans_returns).max():.4f}"
 
     # Debug correlation — phát hiện signal inversion
     actual_returns = np.diff(df_test['close'].values[:len(X_test)]) \
                      / (df_test['close'].values[:len(X_test) - 1] + 1e-9)
-    corr_xgb   = np.corrcoef(xgb_returns[:-1],  actual_returns)[0, 1]
     corr_trans = np.corrcoef(trans_returns[:-1], actual_returns)[0, 1]
-    print(f"   [DEBUG] Corr XGB-Actual={corr_xgb:+.4f} | "
-          f"Corr Trans-Actual={corr_trans:+.4f}")
-    print(f"   [DEBUG] XGB mean={xgb_returns.mean():.5f} | "
-          f"Trans mean={trans_returns.mean():.5f} | "
-          f"Actual mean={actual_returns.mean():.5f}")
+    if xgb_returns is not None:
+        corr_xgb   = np.corrcoef(xgb_returns[:-1],  actual_returns)[0, 1]
+        print(f"   [DEBUG] Corr XGB-Actual={corr_xgb:+.4f} | "
+              f"Corr Trans-Actual={corr_trans:+.4f}")
+        print(f"   [DEBUG] XGB mean={xgb_returns.mean():.5f} | "
+              f"Trans mean={trans_returns.mean():.5f} | "
+              f"Actual mean={actual_returns.mean():.5f}")
+    else:
+        print(f"   [DEBUG] Corr Trans-Actual={corr_trans:+.4f}")
+        print(f"   [DEBUG] Trans mean={trans_returns.mean():.5f} | "
+              f"Actual mean={actual_returns.mean():.5f}")
 
     close_today = df_test['close'].values[:len(X_test)]
     dates       = df_test['date'].values[:len(X_test)]
@@ -118,35 +128,46 @@ def run_simulation(
 
     date_str = lambda d: d.strftime('%Y-%m-%d') if hasattr(d, 'strftime') else str(d)
 
+    buy_index = -1
+    HOLD_DAYS = 3
+
     for i in range(len(X_test) - 1):
-        r_xgb   = xgb_returns[i]
         r_trans = trans_returns[i]
 
-        sig_xgb   = ("Up"   if r_xgb   > threshold_buy  else
-                     "Down" if r_xgb   < threshold_sell else "Neutral")
         sig_trans = ("Up"   if r_trans > threshold_buy  else
                      "Down" if r_trans < threshold_sell else "Neutral")
-        is_buy = (sig_xgb == "Up" and sig_trans == "Up")
+
+        if xgb_returns is not None:
+            r_xgb   = xgb_returns[i]
+            sig_xgb   = ("Up"   if r_xgb   > threshold_buy  else
+                         "Down" if r_xgb   < threshold_sell else "Neutral")
+            is_buy = (sig_xgb == "Up" and sig_trans == "Up")
+        else:
+            is_buy = (sig_trans == "Up")
 
         cur_slip   = slippage_pct * 2.0 if vol_zscore[i] < -1.0 else slippage_pct
         buy_price  = df_test['open'].values[i] * (1 + cur_slip)
         sell_price = df_test['close'].values[i] * (1 - cur_slip)
 
-        # Đóng vị thế cũ (sáng hôm sau)
-        if position == 1:
+        just_sold = False
+        # Đóng vị thế cũ sau HOLD_DAYS ngày
+        if position == 1 and (i - buy_index == HOLD_DAYS):
             cash     = shares * sell_price * (1 - commission_pct)
             shares   = 0.0
             position = 0
+            buy_index = -1
+            just_sold = True
             trades.append(dict(
                 date=date_str(dates[i]), type="SELL",
                 price=sell_price, cash=cash,
             ))
 
-        # Mở vị thế mới (chiều hôm nay)
-        if is_buy:
+        # Mở vị thế mới nếu chưa có vị thế và có tín hiệu mua, và không vừa bán ngày hôm nay
+        if position == 0 and is_buy and not just_sold:
             shares   = cash * (1 - commission_pct) / buy_price
             cash     = 0.0
             position = 1
+            buy_index = i
             trades.append(dict(
                 date=date_str(dates[i]), type="BUY",
                 price=buy_price, shares=shares,
@@ -202,18 +223,26 @@ def run_walk_forward_evaluation(dates, equity, bh_equity):
 
 
 def main():
+    trans_only = False
+    args_cleaned = []
+    for arg in sys.argv:
+        if arg.lower() == "--trans-only":
+            trans_only = True
+        else:
+            args_cleaned.append(arg)
+
     TICKERS       = ["VNM.VN", "GOOGL", "META"]
     threshold_buy = 0.0010
 
-    if len(sys.argv) > 1:
-        arg = sys.argv[1].upper()
+    if len(args_cleaned) > 1:
+        arg = args_cleaned[1].upper()
         if arg in [t.upper() for t in TICKERS]:
             TICKERS = [t for t in TICKERS if t.upper() == arg]
         elif arg == "ALL":
             pass
-    if len(sys.argv) > 2:
+    if len(args_cleaned) > 2:
         try:
-            threshold_buy = float(sys.argv[2])
+            threshold_buy = float(args_cleaned[2])
         except ValueError:
             pass
 
@@ -260,9 +289,14 @@ def main():
         feat_path  = os.path.join(models_dir, f'feature_scaler_{ticker}.pkl')
         targ_path  = os.path.join(models_dir, f'target_scaler_{ticker}.pkl')
 
-        if not (os.path.exists(xgb_path) and os.path.exists(trans_path)):
-            print(f"❌ Không tìm thấy model cho {ticker}. Chạy run_training.py trước.")
-            continue
+        if trans_only:
+            if not os.path.exists(trans_path):
+                print(f"❌ Không tìm thấy model Transformer cho {ticker}. Chạy run_training_transformer.py trước.")
+                continue
+        else:
+            if not (os.path.exists(xgb_path) and os.path.exists(trans_path)):
+                print(f"❌ Không tìm thấy model cho {ticker}. Chạy run_training.py trước.")
+                continue
 
         # Kiểm tra model có mới hơn config tuning không
         import datetime as dt_module
@@ -278,15 +312,25 @@ def main():
                   f"{dt_module.datetime.fromtimestamp(cfg_mtime).strftime('%Y-%m-%d %H:%M')}")
             if cfg_mtime > trans_mtime:
                 print(f"   ⚠️  Config tuning MỚI HƠN model! "
-                      f"Cần chạy run_training.py trước.")
+                      f"Cần chạy huấn luyện trước.")
             else:
                 print(f"   ✅ Model đã train SAU tuning — OK")
 
-        xgb_model = joblib.load(xgb_path)
-        from src.ai_models import load_multitask_model
-        transformer_model = load_multitask_model(
+        xgb_model = None
+        if not trans_only:
+            xgb_model = joblib.load(xgb_path)
+            
+        from src.ai_models import PositionalEmbedding, TimeDecayAttention, UncertaintyWeightsLayer, MultiTaskModel
+        custom_objects = {
+            'PositionalEmbedding': PositionalEmbedding,
+            'TimeDecayAttention': TimeDecayAttention,
+            'UncertaintyWeightsLayer': UncertaintyWeightsLayer,
+            'MultiTaskModel': MultiTaskModel,
+        }
+        transformer_model = tf.keras.models.load_model(
             trans_path,
-            input_shape=(45, X_test.shape[2]),
+            custom_objects=custom_objects,
+            safe_mode=False
         )
         dt.feature_scaler = joblib.load(feat_path)
         dt.target_scaler  = joblib.load(targ_path)

@@ -86,8 +86,9 @@ def main():
         df['atr_14'] = ta.atr(df['high'], df['low'], df['close'], length=14)
         
         transformer = DataTransformer(time_steps=LOOKBACK_WINDOW)
-        # Đồng bộ cột đặc trưng
-        recent_features = df[transformer.feature_cols].tail(LOOKBACK_WINDOW)
+        # SỬA: Phải gọi transform_df() để sinh ra 34 features trước khi lọc cột đặc trưng
+        df_transformed = transformer.transform_df(df)
+        recent_features = df_transformed[transformer.feature_cols].tail(LOOKBACK_WINDOW)
         
         if len(recent_features) < LOOKBACK_WINDOW:
             print(f"❌ Lỗi: Không đủ dữ liệu {LOOKBACK_WINDOW} ngày để tạo sliding window.")
@@ -118,17 +119,11 @@ def main():
         xgb_pred_scaled = xgb_model.predict(X_predict_hybrid).reshape(-1, 1)
         xgb_return_future = scaler_y.inverse_transform(xgb_pred_scaled)[0][0]
         
-        # Dự đoán từ Transformer
-        trans_pred_output = transformer_model.predict(X_predict, verbose=0)
-        trans_scaled = trans_pred_output[0] if isinstance(trans_pred_output, list) else trans_pred_output
-        trans_return_future = scaler_y.inverse_transform(trans_scaled)[0][0]
-        
         # Kết quả cuối cùng
         last_close = float(raw_df['close'].iloc[-1])
         last_date = raw_df.index[-1].strftime('%Y-%m-%d')
         
         xgb_val = last_close * (1 + xgb_return_future)
-        trans_val = last_close * (1 + trans_return_future)
         
         last_atr = float(raw_df['atr_14'].iloc[-1])
         risk_ratio = (last_atr / last_close) * 100
@@ -142,11 +137,8 @@ def main():
             
         xgb_lower = xgb_val - 1.5 * last_atr
         xgb_upper = xgb_val + 1.5 * last_atr
-        trans_lower = trans_val - 1.5 * last_atr
-        trans_upper = trans_val + 1.5 * last_atr
         
         xgb_trend = f"📈 TĂNG ({((xgb_val - last_close)/last_close)*100:+.2f}%)" if xgb_val >= last_close else f"📉 GIẢM ({((xgb_val - last_close)/last_close)*100:+.2f}%)"
-        trans_trend = f"📈 TĂNG ({((trans_val - last_close)/last_close)*100:+.2f}%)" if trans_val >= last_close else f"📉 GIẢM ({((trans_val - last_close)/last_close)*100:+.2f}%)"
         
         print("==========================================================================")
         
@@ -156,20 +148,29 @@ def main():
         log_path = os.path.join(logs_dir, "predictions_history.txt")
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
+        # In kết quả trực tiếp ra màn hình cho thân thiện
+        print(f"📊 KẾT QUẢ DỰ BÁO T+3 CHO MÃ: {ticker}")
+        print(f"  💵 Giá đóng cửa gần nhất ({last_date}): {format_vn(last_close)} VNĐ")
+        print(f"  ⚠️  Mức độ rủi ro biến động: {risk_level} ({risk_ratio:.2f}%)")
+        if "VNM" not in ticker.upper():
+            print(f"  💵 Quy đổi USD: ${last_close/USD_TO_VND:,.2f} USD (Tỷ giá: {format_vn(USD_TO_VND)} VNĐ)")
+            print(f"  🌳 Dự báo Hybrid XGBoost (giá đóng cửa sau 3 phiên - T+3): {format_vn(xgb_val)} VNĐ (${xgb_val/USD_TO_VND:.2f} USD) | {xgb_trend}")
+        else:
+            print(f"  🌳 Dự báo Hybrid XGBoost (giá đóng cửa sau 3 phiên - T+3): {format_vn(xgb_val)} VNĐ | {xgb_trend}")
+        print("==========================================================================")
+
         with open(log_path, "a", encoding="utf-8") as f:
-            f.write(f"=== BẢN GHI DỰ BÁO ({timestamp}) ===\n")
+            f.write(f"=== BẢN GHI DỰ BÁO T+3 ({timestamp}) ===\n")
             f.write(f"Mã chứng khoán: {ticker}\n")
             if "VNM" in ticker.upper():
                 f.write(f"Giá đóng cửa gần nhất ({last_date}): {format_vn(last_close)} VNĐ\n")
                 f.write(f"Rủi ro biến động: {risk_level} (Tỷ lệ: {risk_ratio:.2f}%)\n")
-                f.write(f"Dự báo Hybrid XGBoost (Mô hình lai - Kết hợp đặc trưng ẩn từ Transformer + chỉ báo kỹ thuật): {format_vn(xgb_val)} VNĐ ({xgb_trend}) | Khoảng an toàn: [{format_vn(xgb_lower)} - {format_vn(xgb_upper)}] VNĐ\n")
-                f.write(f"Dự báo Transformer gốc (Mô hình mạng Attention phân nhánh dự báo độc lập): {format_vn(trans_val)} VNĐ ({trans_trend}) | Khoảng an toàn: [{format_vn(trans_lower)} - {format_vn(trans_upper)}] VNĐ\n")
+                f.write(f"Dự báo Hybrid XGBoost (giá đóng cửa sau 3 phiên - T+3): {format_vn(xgb_val)} VNĐ ({xgb_trend}) | Khoảng an toàn: [{format_vn(xgb_lower)} - {format_vn(xgb_upper)}] VNĐ\n")
             else:
                 f.write(f"Giá đóng cửa gần nhất ({last_date}): {format_vn(last_close)} VNĐ (${last_close/USD_TO_VND:,.2f} USD)\n")
                 f.write(f"Rủi ro biến động: {risk_level} (Tỷ lệ: {risk_ratio:.2f}%)\n")
                 f.write(f"Tỷ giá USD/VND quy đổi: 1 USD = {format_vn(USD_TO_VND)} VNĐ\n")
-                f.write(f"Dự báo Hybrid XGBoost (Mô hình lai - Kết hợp đặc trưng ẩn từ Transformer + chỉ báo kỹ thuật): {format_vn(xgb_val)} VNĐ (${xgb_val/USD_TO_VND:.2f} USD) ({xgb_trend}) | Khoảng an toàn: [{format_vn(xgb_lower)} - {format_vn(xgb_upper)}] VNĐ\n")
-                f.write(f"Dự báo Transformer gốc (Mô hình mạng Attention phân nhánh dự báo độc lập): {format_vn(trans_val)} VNĐ (${trans_val/USD_TO_VND:.2f} USD) ({trans_trend}) | Khoảng an toàn: [{format_vn(trans_lower)} - {format_vn(trans_upper)}] VNĐ\n")
+                f.write(f"Dự báo Hybrid XGBoost (giá đóng cửa sau 3 phiên - T+3): {format_vn(xgb_val)} VNĐ (${xgb_val/USD_TO_VND:.2f} USD) ({xgb_trend}) | Khoảng an toàn: [{format_vn(xgb_lower)} - {format_vn(xgb_upper)}] VNĐ\n")
             f.write("-" * 50 + "\n\n")
             
         print("💾 Đã tự động ghi nhận kết quả dự đoán vào nhật ký lịch sử.")

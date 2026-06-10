@@ -174,7 +174,6 @@ class MultiTaskModel(tf.keras.Model):
     """
     Wrapper subclass model cho multi-task training.
     Bên trong chứa một Functional model (backbone) làm feature extractor.
-    Lưu/load bằng save_weights/load_weights.
     """
 
     def __init__(self, backbone, **kwargs):
@@ -195,6 +194,18 @@ class MultiTaskModel(tf.keras.Model):
     @property
     def input(self):
         return self.backbone.input
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            'backbone': tf.keras.utils.serialize_keras_object(self.backbone),
+        })
+        return config
+
+    @classmethod
+    def from_config(cls, config):
+        backbone = tf.keras.utils.deserialize_keras_object(config.pop('backbone'))
+        return cls(backbone=backbone, **config)
 
     def train_step(self, data):
         x, y = data
@@ -255,33 +266,7 @@ class MultiTaskModel(tf.keras.Model):
         }
 
 
-# ── Lưu / Load helpers ───────────────────────────────────────────────
-def save_multitask_model(model, path):
-    """
-    Lưu backbone (Functional) ra file .keras + weights của wrapper.
-    path: ví dụ 'models/transformer_model_VNM.VN.keras'
-    """
-    # Lưu backbone Functional model — serialize an toàn
-    model.backbone.save(path)
-
-
-def load_multitask_model(path, input_shape, learning_rate=1e-4):
-    """
-    Load backbone từ .keras, bọc lại vào MultiTaskModel mới.
-    Trả về MultiTaskModel đã compile, sẵn sàng predict/extract features.
-    """
-    custom_objs = {
-        'PositionalEmbedding':    PositionalEmbedding,
-        'TimeDecayAttention':     TimeDecayAttention,
-        'UncertaintyWeightsLayer': UncertaintyWeightsLayer,
-    }
-    backbone = tf.keras.models.load_model(path, custom_objects=custom_objs, safe_mode=False)
-    model = MultiTaskModel(backbone=backbone)
-    model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate))
-    # Build bằng cách forward dummy
-    dummy = np.zeros((1,) + input_shape, dtype=np.float32)
-    model(dummy, training=False)
-    return model
+# Custom helper removal (Standard tf.keras serialization used instead)
 
 
 # ── GLU helper ───────────────────────────────────────────────────────

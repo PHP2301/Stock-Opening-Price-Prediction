@@ -11,7 +11,7 @@ if hasattr(sys.stdout, 'reconfigure'):
 
 import matplotlib.pyplot as plt
 from sklearn.metrics import mean_squared_error, mean_absolute_error
-from tensorflow.keras.callbacks import EarlyStopping, LearningRateScheduler
+from tensorflow.keras.callbacks import EarlyStopping, LearningRateScheduler, ReduceLROnPlateau
 import tensorflow as tf
 import math
 import joblib
@@ -28,7 +28,7 @@ os.environ['PYTHONHASHSEED'] = str(SEED)
 
 from src.data_loader import fetch_and_prepare_data, format_vn, get_realtime_usd_vnd_rate
 from src.features import DataTransformer
-from src.ai_models import build_transformer, save_multitask_model
+from src.ai_models import build_transformer
 
 USD_TO_VND = get_realtime_usd_vnd_rate()
 print(f"💵 [TỶ GIÁ] Sử dụng tỷ giá USD/VND realtime: {format_vn(USD_TO_VND)} VNĐ\n")
@@ -54,10 +54,14 @@ def evaluate_predictions(y_true, y_pred, model_name, ticker):
     return rmse, mae, mape
 
 
-def cosine_decay(epoch):
-    initial_lrate = 1e-4
-    cos_outer = math.pi * epoch / 100
-    return max(initial_lrate * 0.5 * (1.0 + math.cos(cos_outer)), 1e-5)
+def cosine_decay_with_warmup(epoch, target_lr=1e-4):
+    warmup_epochs = 5
+    total_epochs = 120
+    min_lr = 1e-6
+    if epoch < warmup_epochs:
+        return min_lr + (target_lr - min_lr) * epoch / warmup_epochs
+    progress = (epoch - warmup_epochs) / (total_epochs - warmup_epochs)
+    return min_lr + 0.5 * (target_lr - min_lr) * (1 + math.cos(math.pi * progress))
 
 
 def main():
@@ -74,8 +78,9 @@ def main():
             TICKERS = [t for t in TICKERS if t.upper() == arg]
 
     callbacks = [
-        EarlyStopping(monitor='val_loss', patience=50, min_delta=0.001, restore_best_weights=True, verbose=1),
-        LearningRateScheduler(cosine_decay, verbose=0),
+        EarlyStopping(monitor='loss', patience=15, min_delta=1e-5, restore_best_weights=True, verbose=1),
+        ReduceLROnPlateau(monitor='loss', factor=0.5, patience=8, min_lr=1e-6, verbose=1),
+        LearningRateScheduler(lambda epoch: cosine_decay_with_warmup(epoch, target_lr=learning_rate), verbose=0),
     ]
 
     models_dir  = os.path.join(ROOT_DIR, 'models')
@@ -101,10 +106,12 @@ def main():
             dt.split_train_test_chronological(df, X_3D, y_3D, y_spread_3D, train_ratio=0.8)
 
         val_size = int(len(X_train_i) * 0.1)
-        if val_size > 0:
-            X_tr, y_tr = X_train_i[:-val_size], y_train_i[:-val_size]
+        purge = 45
+        if val_size > 0 and len(X_train_i) - val_size - purge > 0:
+            train_end = len(X_train_i) - val_size - purge
+            X_tr, y_tr = X_train_i[:train_end], y_train_i[:train_end]
             X_va, y_va = X_train_i[-val_size:], y_train_i[-val_size:]
-            y_tr_spread = y_train_spread_i[:-val_size]
+            y_tr_spread = y_train_spread_i[:train_end]
             y_va_spread = y_train_spread_i[-val_size:]
         else:
             X_tr, y_tr = X_train_i, y_train_i
@@ -162,7 +169,7 @@ def main():
                 X_va,
                 {"output_return": y_va, "output_spread": y_va_spread},
             ),
-            epochs=100,
+            epochs=120,
             batch_size=batch_size,
             callbacks=callbacks,
             verbose=2,
@@ -218,8 +225,8 @@ def main():
         path_ts     = os.path.join(models_dir, f'transformer_model_{ticker}_{timestamp}.keras')
         path_latest = os.path.join(models_dir, f'transformer_model_{ticker}.keras')
 
-        save_multitask_model(transformer_model, path_ts)
-        save_multitask_model(transformer_model, path_latest)
+        transformer_model.save(path_ts)
+        transformer_model.save(path_latest)
 
         joblib.dump(dt.feature_scaler,
                     os.path.join(models_dir, f'feature_scaler_{ticker}_{timestamp}.pkl'))

@@ -343,7 +343,7 @@ def fetch_and_prepare_data(
     df['news_volume']     = df['news_volume'].fillna(0.0)
 
     # Target
-    df['target_return'] = (df['close'] - df['open']) / df['open']
+    df['target_return'] = (df['close'].shift(-3) - df['open']) / df['open']
     df['target_spread'] = (df['high'].shift(-1) - df['low'].shift(-1)) / df['close']
 
     # === SỬA: KHÔNG còn tạo DataTransformer() nội bộ ở đây ===

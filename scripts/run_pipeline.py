@@ -67,7 +67,7 @@ def cosine_decay(epoch):
     lrate = initial_lrate * 0.5 * (1.0 + math.cos(cos_outer))
     return max(lrate, 1e-5)
 
-def log_prediction_to_file(ticker, last_date, last_close, risk_level, risk_ratio, xgb_val, xgb_lower, xgb_upper, trans_val, trans_lower, trans_upper, rate_today=None):
+def log_prediction_to_file(ticker, last_date, last_close, risk_level, risk_ratio, xgb_val, xgb_lower, xgb_upper, trans_val=None, trans_lower=None, trans_upper=None, rate_today=None):
     logs_dir = os.path.join(ROOT_DIR, "logs")
     os.makedirs(logs_dir, exist_ok=True)
     log_path = os.path.join(logs_dir, "predictions_history.txt")
@@ -80,23 +80,20 @@ def log_prediction_to_file(ticker, last_date, last_close, risk_level, risk_ratio
         return f"({emoji} {pct:+.2f}%)"
 
     xgb_trend = get_trend_indicator(xgb_val, last_close)
-    trans_trend = get_trend_indicator(trans_val, last_close)
 
     with open(log_path, "a", encoding="utf-8") as f:
-        f.write(f"=== BẢN GHI DỰ BÁO ({timestamp}) ===\n")
+        f.write(f"=== BẢN GHI DỰ BÁO T+3 ({timestamp}) ===\n")
         f.write(f"Mã chứng khoán: {ticker}\n")
         if "VNM" in ticker.upper():
             f.write(f"Giá đóng cửa gần nhất ({last_date}): {format_vn(last_close)} VNĐ\n")
             f.write(f"Rủi ro biến động: {risk_level} (Tỷ lệ: {risk_ratio:.2f}%)\n")
-            f.write(f"Dự báo XGBoost: {format_vn(xgb_val)} VNĐ {xgb_trend} | Khoảng an toàn: [{format_vn(xgb_lower)} - {format_vn(xgb_upper)}] VNĐ\n")
-            f.write(f"Dự báo Transformer: {format_vn(trans_val)} VNĐ {trans_trend} | Khoảng an toàn: [{format_vn(trans_lower)} - {format_vn(trans_upper)}] VNĐ\n")
+            f.write(f"Dự báo XGBoost (T+3): {format_vn(xgb_val)} VNĐ {xgb_trend} | Khoảng an toàn: [{format_vn(xgb_lower)} - {format_vn(xgb_upper)}] VNĐ\n")
         else:
             rate = rate_today if rate_today else 25400
             f.write(f"Giá đóng cửa gần nhất ({last_date}): {format_vn(last_close)} VNĐ (${last_close/rate:,.2f} USD)\n")
             f.write(f"Rủi ro biến động: {risk_level} (Tỷ lệ: {risk_ratio:.2f}%)\n")
             f.write(f"Tỷ giá USD/VND quy đổi: 1 USD = {format_vn(rate)} VNĐ\n")
-            f.write(f"Dự báo XGBoost: {format_vn(xgb_val)} VNĐ (${xgb_val/rate:.2f} USD) {xgb_trend} | Khoảng an toàn: [{format_vn(xgb_lower)} - {format_vn(xgb_upper)}] VNĐ\n")
-            f.write(f"Dự báo Transformer: {format_vn(trans_val)} VNĐ (${trans_val/rate:.2f} USD) {trans_trend} | Khoảng an toàn: [{format_vn(trans_lower)} - {format_vn(trans_upper)}] VNĐ\n")
+            f.write(f"Dự báo XGBoost (T+3): {format_vn(xgb_val)} VNĐ (${xgb_val/rate:.2f} USD) {xgb_trend} | Khoảng an toàn: [{format_vn(xgb_lower)} - {format_vn(xgb_upper)}] VNĐ\n")
         f.write("-" * 50 + "\n\n")
 
 def main():
@@ -144,8 +141,10 @@ def main():
             
             # Tạo tập validation nhỏ 10% từ tập train phục vụ cho việc theo dõi khớp mạng Neural
             val_size = int(len(X_train_i) * 0.1)
-            if val_size > 0:
-                X_tr, y_tr = X_train_i[:-val_size], y_train_i[:-val_size]
+            purge = 45
+            if val_size > 0 and len(X_train_i) - val_size - purge > 0:
+                train_end = len(X_train_i) - val_size - purge
+                X_tr, y_tr = X_train_i[:train_end], y_train_i[:train_end]
                 X_va, y_va = X_train_i[-val_size:], y_train_i[-val_size:]
             else:
                 X_tr, y_tr = X_train_i, y_train_i
@@ -685,12 +684,9 @@ def main():
                     X_predict = recent_scaled.reshape(1, LOOKBACK_WINDOW, len(t_trans.feature_cols))
                     xgb_pred_scaled = xgb_model.predict(X_predict.reshape(1, -1)).reshape(-1, 1)
                     xgb_return_future = t_trans.target_scaler.inverse_transform(xgb_pred_scaled)[0][0]
-                    trans_pred_scaled = transformer_model.predict(X_predict, verbose=0)
-                    trans_return_future = t_trans.target_scaler.inverse_transform(trans_pred_scaled)[0][0]
                     last_close = recent_features['close'].iloc[-1]
                     last_date = recent_features.index[-1].strftime('%Y-%m-%d')
                     xgb_val = last_close * (1 + xgb_return_future)
-                    trans_val = last_close * (1 + trans_return_future)
                     
                     # Tính toán mức độ rủi ro biến động dựa trên ATR và khoảng giá an toàn
                     last_atr = raw_df['atr_14'].iloc[-1]
@@ -704,29 +700,23 @@ def main():
 
                     xgb_lower = xgb_val - 1.5 * last_atr
                     xgb_upper = xgb_val + 1.5 * last_atr
-                    trans_lower = trans_val - 1.5 * last_atr
-                    trans_upper = trans_val + 1.5 * last_atr
 
                     xgb_trend = f"📈 TĂNG ({((xgb_val - last_close)/last_close)*100:+.2f}%)" if xgb_val >= last_close else f"📉 GIẢM ({((xgb_val - last_close)/last_close)*100:+.2f}%)"
-                    trans_trend = f"📈 TĂNG ({((trans_val - last_close)/last_close)*100:+.2f}%)" if trans_val >= last_close else f"📉 GIẢM ({((trans_val - last_close)/last_close)*100:+.2f}%)"
 
                     if "VNM" in ticker.upper():
                         print(f"💵 Giá đóng cửa thực tế gần nhất ({last_date}): {format_vn(last_close)} VNĐ")
                         print(f"⚠️ Mức độ rủi ro biến động hiện tại: {risk_level} (Tỷ lệ biến động: {risk_ratio:.2f}%)")
-                        print(f"🔮 DỰ BÁO GIÁ MỞ CỬA & KHOẢNG AN TOÀN CHO PHIÊN KẾ TIẾP:")
+                        print(f"🔮 DỰ BÁO GIÁ ĐỒNG CỬA & KHOẢNG AN TOÀN T+3:")
                         print(f"  - 🌳 XGBoost    : {format_vn(xgb_val)} VNĐ | {xgb_trend} | Khoảng an toàn: [{format_vn(xgb_lower)} - {format_vn(xgb_upper)}] VNĐ")
-                        print(f"  - 🤖 Transformer: {format_vn(trans_val)} VNĐ | {trans_trend} | Khoảng an toàn: [{format_vn(trans_lower)} - {format_vn(trans_upper)}] VNĐ")
-                        log_prediction_to_file(ticker, last_date, last_close, risk_level, risk_ratio, xgb_val, xgb_lower, xgb_upper, trans_val, trans_lower, trans_upper)
+                        log_prediction_to_file(ticker, last_date, last_close, risk_level, risk_ratio, xgb_val, xgb_lower, xgb_upper)
                     else:
                         rate_today = usd_vnd_rate
                         print(f"💵 Giá đóng cửa thực tế gần nhất ({last_date}): {format_vn(last_close)} VNĐ (tương đương ${last_close/rate_today:,.2f} USD)")
                         print(f"⚠️ Mức độ rủi ro biến động hiện tại: {risk_level} (Tỷ lệ biến động: {risk_ratio:.2f}%)")
-                        print(f"🔮 DỰ BÁO GIÁ MỞ CỬA & KHOẢNG AN TOÀN CHO PHIÊN KẾ TIẾP (tỷ giá quy đổi: 1 USD = {format_vn(rate_today)} VNĐ):")
+                        print(f"🔮 DỰ BÁO GIÁ ĐỒNG CỬA & KHOẢNG AN TOÀN T+3 (tỷ giá quy đổi: 1 USD = {format_vn(rate_today)} VNĐ):")
                         print(f"  - 🌳 XGBoost    : {format_vn(xgb_val)} VNĐ (tương đương ${xgb_val/rate_today:.2f} USD) | {xgb_trend}")
                         print(f"                    Khoảng an toàn: [{format_vn(xgb_lower)} - {format_vn(xgb_upper)}] VNĐ (tương đương ${xgb_lower/rate_today:.2f} - ${xgb_upper/rate_today:.2f} USD)")
-                        print(f"  - 🤖 Transformer: {format_vn(trans_val)} VNĐ (tương đương ${trans_val/rate_today:.2f} USD) | {trans_trend}")
-                        print(f"                    Khoảng an toàn: [{format_vn(trans_lower)} - {format_vn(trans_upper)}] VNĐ (tương đương ${trans_lower/rate_today:.2f} - ${trans_upper/rate_today:.2f} USD)")
-                        log_prediction_to_file(ticker, last_date, last_close, risk_level, risk_ratio, xgb_val, xgb_lower, xgb_upper, trans_val, trans_lower, trans_upper, rate_today)
+                        log_prediction_to_file(ticker, last_date, last_close, risk_level, risk_ratio, xgb_val, xgb_lower, xgb_upper, None, None, None, rate_today)
                 else:
                     print(f"Lỗi: Không đủ dữ liệu {LOOKBACK_WINDOW} ngày cho {ticker}")
             else:
