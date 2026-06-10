@@ -186,15 +186,10 @@ def main():
         # ════════════════════════════════════════════════════════════════
         if not RETRAIN_TRANSFORMER and os.path.exists(trans_latest_path):
             print(f"♻️  [LOAD] Dùng Transformer đã train: {trans_latest_path}")
-            transformer_model = tf.keras.models.load_model(
+            from src.ai_models import load_multitask_model
+            transformer_model = load_multitask_model(
                 trans_latest_path,
-                custom_objects={
-                    'PositionalEmbedding': PositionalEmbedding,
-                    'TimeDecayAttention': TimeDecayAttention,
-                    'MultiTaskModel': MultiTaskModel,
-                    'UncertaintyWeightsLayer': UncertaintyWeightsLayer,
-                },
-                safe_mode=False
+                input_shape=(X_train_i.shape[1], X_train_i.shape[2]),
             )
             # Load scalers đã lưu (nếu có) để đồng bộ
             feat_scaler_path = os.path.join(models_dir, f'feature_scaler_{ticker}.pkl')
@@ -234,7 +229,7 @@ def main():
                     epochs=60, batch_size=batch_size, callbacks=fold_cb, verbose=0,
                 )
                 fold_extractor = Model(
-                    inputs=fold_model.input,
+                    inputs=fold_model.inputs,
                     outputs=fold_model.get_layer("latent_embedding").output,
                 )
                 X_train_latent_oof[val_idx] = fold_extractor.predict(X_va_f, verbose=0)
@@ -251,11 +246,10 @@ def main():
                 validation_data=(X_va, {"output_return": y_va, "output_spread": y_va_spread}),
                 epochs=100, batch_size=batch_size, callbacks=callbacks_main, verbose=0,
             )
-
         # ── BƯỚC 3: Feature extractor & XGBoost ───────────────────────
         print(f"🔍 [EXTRACT] Trích latent features...")
         feature_extractor = Model(
-            inputs=transformer_model.input,
+            inputs=transformer_model.inputs,   # ← đổi .input → .inputs
             outputs=transformer_model.get_layer("latent_embedding").output,
         )
 
@@ -323,8 +317,9 @@ def main():
 
         # Chỉ lưu Transformer nếu đã train lại
         if RETRAIN_TRANSFORMER or not os.path.exists(trans_latest_path):
-            transformer_model.save(os.path.join(models_dir, f'transformer_model_{ticker}_{timestamp}.keras'))
-            transformer_model.save(trans_latest_path)
+            from src.ai_models import save_multitask_model
+            save_multitask_model(transformer_model, os.path.join(models_dir, f'transformer_model_{ticker}_{timestamp}.keras'))
+            save_multitask_model(transformer_model, trans_latest_path)
             joblib.dump(dt.feature_scaler, os.path.join(models_dir, f'feature_scaler_{ticker}.pkl'))
             joblib.dump(dt.target_scaler,  os.path.join(models_dir, f'target_scaler_{ticker}.pkl'))
 
@@ -467,7 +462,7 @@ def main():
         trans_pred_clean = get_return_output(trans_pred_live)
         trans_return_future = dt.target_scaler.inverse_transform(trans_pred_clean)[0][0]
 
-        last_close = float(raw_df['close'].iloc[-1])
+        last_close = float(raw_df['open'].dropna().iloc[-1])
         last_date  = raw_df.index[-1].strftime('%Y-%m-%d')
 
         xgb_val   = last_close * (1 + xgb_return_future)
@@ -505,3 +500,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+

@@ -1,347 +1,372 @@
 import os
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # Ẩn các cảnh báo hệ thống của TensorFlow
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Dense, Dropout, Input, MultiHeadAttention, LayerNormalization, Flatten, Conv1D, Bidirectional, GRU, Multiply
+from tensorflow.keras.layers import (
+    Dense, Dropout, Input, LayerNormalization,
+    Conv1D, Bidirectional, GRU, Multiply, Concatenate
+)
 from xgboost import XGBRegressor
-# ==========================================
-# 1. MÔ HÌNH XGBoost (Cần làm phẳng dữ liệu 3D thành 2D)
-# ==========================================
 from sklearn.model_selection import TimeSeriesSplit, RandomizedSearchCV
 
+
 def build_xgboost_optimized(X_train_flat, y_train):
-    """
-    Sử dụng thuật toán RandomizedSearchCV kết hợp TimeSeriesSplit 
-    để tự động tìm bộ tham số tối ưu nhất cho XGBoost một cách nhanh chóng.
-    """
-    # Đặt n_jobs=1 cho XGBRegressor đơn lẻ để tránh tranh chấp tài nguyên với n_jobs=-1 của RandomizedSearchCV
     xgb_model = XGBRegressor(random_state=42, n_jobs=1)
-    
-    # Định nghĩa không gian tham số rộng hơn
     param_distributions = {
         'n_estimators': [100, 150, 200],
         'max_depth': [3, 4, 5],
         'learning_rate': [0.03, 0.05, 0.1],
         'subsample': [0.8, 0.9, 1.0],
-        'colsample_bytree': [0.8, 0.9, 1.0]
+        'colsample_bytree': [0.8, 0.9, 1.0],
     }
-    
-    # Chia tập kiểm thử chéo dạng chuỗi thời gian (không làm xáo trộn ngày tháng)
     tscv = TimeSeriesSplit(n_splits=5)
-    
-    # Sử dụng RandomizedSearchCV để thử ngẫu nhiên 6 cấu hình tối ưu nhất
     search = RandomizedSearchCV(
-        estimator=xgb_model, 
-        param_distributions=param_distributions, 
-        n_iter=6,
-        cv=tscv, 
-        scoring='neg_mean_absolute_error', 
-        n_jobs=1,
-        random_state=42
+        estimator=xgb_model,
+        param_distributions=param_distributions,
+        n_iter=6, cv=tscv,
+        scoring='neg_mean_absolute_error',
+        n_jobs=1, random_state=42,
     )
-    
     print("⏳ Đang quét nhanh bộ tham số tối ưu cho XGBoost...")
     search.fit(X_train_flat, y_train.ravel())
-    
-    print(f"🔥 Tham số tối ưu tìm được: {search.best_params_}")
+    print(f"🔥 Tham số tối ưu: {search.best_params_}")
     return search.best_estimator_
 
 
-# ==========================================
-# 2. MÔ HÌNH TRANSFORMER PHÂN NHÁNH & HỌC ĐA NHIỆM (3 Branches, Uncertainty Weighting Loss)
-# ==========================================
+# ── PositionalEmbedding ──────────────────────────────────────────────
 @tf.keras.utils.register_keras_serializable()
 class PositionalEmbedding(tf.keras.layers.Layer):
-    """Lớp toán học gán thẻ thứ tự thời gian cho dữ liệu chuỗi"""
+    """Gán thẻ thứ tự thời gian — weights trong build() chuẩn Keras 3."""
+
     def __init__(self, sequence_length, d_model, **kwargs):
         super().__init__(**kwargs)
-        self.pos_emb = tf.keras.layers.Embedding(input_dim=sequence_length, output_dim=d_model)
         self.sequence_length = sequence_length
         self.d_model = d_model
 
+    def build(self, input_shape):
+        self.pos_embedding = self.add_weight(
+            name='pos_embedding',
+            shape=(self.sequence_length, self.d_model),
+            initializer='uniform',
+            trainable=True,
+        )
+        super().build(input_shape)
+
     def call(self, inputs):
-        positions = tf.range(start=0, limit=self.sequence_length, delta=1)
-        embedded_positions = self.pos_emb(positions)
-        return inputs + embedded_positions
+        seq_len = tf.shape(inputs)[1]
+        return inputs + self.pos_embedding[:seq_len, :]
 
     def get_config(self):
         config = super().get_config()
         config.update({
-            "sequence_length": self.sequence_length,
-            "d_model": self.d_model,
+            'sequence_length': self.sequence_length,
+            'd_model': self.d_model,
         })
         return config
 
 
+# ── TimeDecayAttention ───────────────────────────────────────────────
 @tf.keras.utils.register_keras_serializable()
 class TimeDecayAttention(tf.keras.layers.Layer):
-    """
-    Cơ chế Attention trễ thời gian (Time-Decay Attention) tự học hệ số suy giảm gamma 
-    cho từng Head để giảm mức độ chú ý vào các phiên quá xa trong quá khứ.
-    """
+    """Attention với hệ số suy giảm thời gian trainable per-head."""
+
     def __init__(self, num_heads, key_dim, dropout_rate=0.0, **kwargs):
         super().__init__(**kwargs)
-        self.num_heads = num_heads
-        self.key_dim = key_dim
+        self.num_heads    = num_heads
+        self.key_dim      = key_dim
         self.dropout_rate = dropout_rate
-        
+
     def build(self, input_shape):
         d_model = input_shape[-1]
-        self.query_dense = tf.keras.layers.Dense(self.num_heads * self.key_dim)
-        self.key_dense = tf.keras.layers.Dense(self.num_heads * self.key_dim)
-        self.value_dense = tf.keras.layers.Dense(self.num_heads * self.key_dim)
-        self.out_dense = tf.keras.layers.Dense(d_model)
-        
-        # Hệ số decay log_gamma của từng head (đảm bảo gamma > 0 qua Softplus)
-        self.log_gamma = self.add_weight(
+        self.query_dense = Dense(self.num_heads * self.key_dim)
+        self.key_dense   = Dense(self.num_heads * self.key_dim)
+        self.value_dense = Dense(self.num_heads * self.key_dim)
+        self.out_dense   = Dense(d_model)
+        self.log_gamma   = self.add_weight(
             name='log_gamma',
             shape=(self.num_heads, 1, 1),
             initializer='zeros',
-            trainable=True
+            trainable=True,
         )
+        self.dropout = Dropout(self.dropout_rate)
         super().build(input_shape)
-        
-    def call(self, inputs):
+
+    def call(self, inputs, training=False):
         batch_size = tf.shape(inputs)[0]
-        seq_len = tf.shape(inputs)[1]
-        
-        Q = self.query_dense(inputs)
-        K = self.key_dense(inputs)
-        V = self.value_dense(inputs)
-        
-        # Reshape sang (batch, seq, heads, dim)
-        Q = tf.reshape(Q, (batch_size, seq_len, self.num_heads, self.key_dim))
-        K = tf.reshape(K, (batch_size, seq_len, self.num_heads, self.key_dim))
-        V = tf.reshape(V, (batch_size, seq_len, self.num_heads, self.key_dim))
-        
-        # Transpose sang (batch, heads, seq, dim)
-        Q = tf.transpose(Q, perm=[0, 2, 1, 3])
-        K = tf.transpose(K, perm=[0, 2, 1, 3])
-        V = tf.transpose(V, perm=[0, 2, 1, 3])
-        
-        # Tích vô hướng scaled QK^T
-        score = tf.matmul(Q, K, transpose_b=True) / tf.math.sqrt(tf.cast(self.key_dim, tf.float32))
-        
-        # Tính khoảng cách delta_t giữa các phiên: |i - j|
+        seq_len    = tf.shape(inputs)[1]
+
+        Q = tf.reshape(self.query_dense(inputs),
+                       (batch_size, seq_len, self.num_heads, self.key_dim))
+        K = tf.reshape(self.key_dense(inputs),
+                       (batch_size, seq_len, self.num_heads, self.key_dim))
+        V = tf.reshape(self.value_dense(inputs),
+                       (batch_size, seq_len, self.num_heads, self.key_dim))
+
+        Q = tf.transpose(Q, [0, 2, 1, 3])
+        K = tf.transpose(K, [0, 2, 1, 3])
+        V = tf.transpose(V, [0, 2, 1, 3])
+
+        score = tf.matmul(Q, K, transpose_b=True) / tf.math.sqrt(
+            tf.cast(self.key_dim, tf.float32)
+        )
         positions = tf.cast(tf.range(seq_len), tf.float32)
-        delta_t = tf.abs(positions[:, None] - positions[None, :])
-        delta_t = tf.expand_dims(tf.expand_dims(delta_t, 0), 0) # (1, 1, seq, seq)
-        
-        gamma = tf.math.softplus(self.log_gamma) # (heads, 1, 1)
-        gamma = tf.expand_dims(gamma, 0) # (1, heads, 1, 1)
-        
-        decay = gamma * delta_t
-        score = score - decay  # Áp dụng suy giảm theo khoảng cách thời gian
-        
-        attention_weights = tf.nn.softmax(score, axis=-1)
-        
-        out = tf.matmul(attention_weights, V)
-        out = tf.transpose(out, perm=[0, 2, 1, 3])
+        delta_t   = tf.abs(positions[:, None] - positions[None, :])
+        delta_t   = delta_t[None, None, :, :]
+        gamma     = tf.math.softplus(self.log_gamma)
+        gamma     = gamma[None, :, :, :]
+        score     = score - gamma * delta_t
+
+        attn_weights = tf.nn.softmax(score, axis=-1)
+        attn_weights = self.dropout(attn_weights, training=training)
+
+        out = tf.matmul(attn_weights, V)
+        out = tf.transpose(out, [0, 2, 1, 3])
         out = tf.reshape(out, (batch_size, seq_len, self.num_heads * self.key_dim))
         return self.out_dense(out)
-        
+
     def get_config(self):
         config = super().get_config()
         config.update({
-            "num_heads": self.num_heads,
-            "key_dim": self.key_dim,
-            "dropout_rate": self.dropout_rate,
+            'num_heads':    self.num_heads,
+            'key_dim':      self.key_dim,
+            'dropout_rate': self.dropout_rate,
         })
         return config
 
 
+# ── UncertaintyWeightsLayer ──────────────────────────────────────────
 @tf.keras.utils.register_keras_serializable()
 class UncertaintyWeightsLayer(tf.keras.layers.Layer):
-    """
-    Lớp lưu trữ trọng số bất định (trainable log-variances) cho loss đa nhiệm.
-    Giúp tránh lỗi Keras 3 serialization khi gán biến trực tiếp vào Functional Model.
-    """
+    """Lưu log-variances cho Kendall uncertainty weighting."""
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.log_var1 = self.add_weight(name="log_var_return", shape=(), initializer="zeros", trainable=True)
-        self.log_var2 = self.add_weight(name="log_var_spread", shape=(), initializer="zeros", trainable=True)
-        
+
+    def build(self, input_shape):
+        self.log_var1 = self.add_weight(
+            name='log_var_return', shape=(),
+            initializer='zeros', trainable=True,
+        )
+        self.log_var2 = self.add_weight(
+            name='log_var_spread', shape=(),
+            initializer='zeros', trainable=True,
+        )
+        super().build(input_shape)
+
     def call(self, inputs):
         return inputs
-        
+
     def get_config(self):
         return super().get_config()
 
 
-try:
-    from keras.src.models.functional import Functional
-except ImportError:
-    Functional = tf.keras.models.Model
+# ── MultiTaskModel ───────────────────────────────────────────────────
+# THIẾT KẾ MỚI:
+# - Kế thừa tf.keras.Model (subclass API) — có call() đầy đủ
+# - KHÔNG dùng Functional constructor (inputs=, outputs=)
+# - Lưu/load bằng save_weights / load_weights thay vì model.save()
+# - build_transformer() trả về tuple (multitask_model, base_functional_model)
+#   để backtest dùng base_functional_model.inputs an toàn
 
 @tf.keras.utils.register_keras_serializable()
-class MultiTaskModel(Functional):
+class MultiTaskModel(tf.keras.Model):
     """
-    Mô hình học đa nhiệm tự động cân bằng trọng số tổn thất 
-    (Kendall 2018 Uncertainty Weighting Loss) cho lợi nhuận (Return) và độ rộng giá (Spread).
+    Wrapper subclass model cho multi-task training.
+    Bên trong chứa một Functional model (backbone) làm feature extractor.
+    Lưu/load bằng save_weights/load_weights.
     """
-    def get_config(self):
-        try:
-            from keras.src.models.functional import Functional
-            return Functional.get_config(self)
-        except ImportError:
-            return super().get_config()
 
-    @classmethod
-    def from_config(cls, config, custom_objects=None):
-        try:
-            from keras.src.models.functional import Functional
-            model = Functional.from_config(config, custom_objects=custom_objects)
-            model.__class__ = cls
-            return model
-        except ImportError:
-            return super().from_config(config, custom_objects=custom_objects)
-        
+    def __init__(self, backbone, **kwargs):
+        super().__init__(**kwargs)
+        self.backbone = backbone
+
+    def call(self, inputs, training=False):
+        return self.backbone(inputs, training=training)
+
+    def get_layer(self, name=None, index=None):
+        # Delegate get_layer về backbone để feature extractor hoạt động
+        return self.backbone.get_layer(name=name, index=index)
+
+    @property
+    def inputs(self):
+        return self.backbone.inputs
+
+    @property
+    def input(self):
+        return self.backbone.input
+
     def train_step(self, data):
         x, y = data
         y_return = y["output_return"]
         y_spread = y["output_spread"]
-        
-        # Lấy weights từ UncertaintyWeightsLayer
-        w_layer = self.get_layer("uncertainty_weights")
+
+        w_layer  = self.backbone.get_layer("uncertainty_weights")
         log_var1 = w_layer.log_var1
         log_var2 = w_layer.log_var2
-        
+
         with tf.GradientTape() as tape:
             pred_return, pred_spread = self(x, training=True)
-            
-            # Loss cơ bản sử dụng Huber Loss
-            loss_return = tf.keras.losses.huber(y_return, pred_return)
-            loss_spread = tf.keras.losses.huber(y_spread, pred_spread)
-            
-            # Tổn thất tích hợp trọng số bất định
-            loss_return_weighted = tf.exp(-log_var1) * loss_return + 0.5 * log_var1
-            loss_spread_weighted = tf.exp(-log_var2) * loss_spread + 0.5 * log_var2
-            
-            total_loss = tf.reduce_mean(loss_return_weighted + loss_spread_weighted)
-            
-        trainable_vars = self.trainable_variables
-        gradients = tape.gradient(total_loss, trainable_vars)
-        self.optimizer.apply_gradients(zip(gradients, trainable_vars))
-        
+            pred_return = tf.squeeze(pred_return, axis=-1)
+            pred_spread = tf.squeeze(pred_spread, axis=-1)
+
+            loss_r = tf.keras.losses.huber(y_return, pred_return)
+            loss_s = tf.keras.losses.huber(y_spread, pred_spread)
+
+            loss_r_w = tf.exp(-log_var1) * loss_r + 0.5 * log_var1
+            loss_s_w = tf.exp(-log_var2) * loss_s + 0.5 * log_var2
+            total    = tf.reduce_mean(loss_r_w + loss_s_w)
+
+        grads = tape.gradient(total, self.trainable_variables)
+        self.optimizer.apply_gradients(zip(grads, self.trainable_variables))
+
         return {
-            "loss": total_loss,
-            "loss_return": tf.reduce_mean(loss_return),
-            "loss_spread": tf.reduce_mean(loss_spread),
+            "loss":         total,
+            "loss_return":  tf.reduce_mean(loss_r),
+            "loss_spread":  tf.reduce_mean(loss_s),
             "sigma_return": tf.exp(0.5 * log_var1),
-            "sigma_spread": tf.exp(0.5 * log_var2)
+            "sigma_spread": tf.exp(0.5 * log_var2),
         }
-        
+
     def test_step(self, data):
         x, y = data
         y_return = y["output_return"]
         y_spread = y["output_spread"]
-        
-        # Lấy weights từ UncertaintyWeightsLayer
-        w_layer = self.get_layer("uncertainty_weights")
+
+        w_layer  = self.backbone.get_layer("uncertainty_weights")
         log_var1 = w_layer.log_var1
         log_var2 = w_layer.log_var2
-        
+
         pred_return, pred_spread = self(x, training=False)
-        
-        # Loss cơ bản sử dụng Huber Loss
-        loss_return = tf.keras.losses.huber(y_return, pred_return)
-        loss_spread = tf.keras.losses.huber(y_spread, pred_spread)
-        
-        # Tổn thất tích hợp trọng số bất định
-        loss_return_weighted = tf.exp(-log_var1) * loss_return + 0.5 * log_var1
-        loss_spread_weighted = tf.exp(-log_var2) * loss_spread + 0.5 * log_var2
-        
-        total_loss = tf.reduce_mean(loss_return_weighted + loss_spread_weighted)
-        
+        pred_return = tf.squeeze(pred_return, axis=-1)
+        pred_spread = tf.squeeze(pred_spread, axis=-1)
+
+        loss_r = tf.keras.losses.huber(y_return, pred_return)
+        loss_s = tf.keras.losses.huber(y_spread, pred_spread)
+
+        loss_r_w = tf.exp(-log_var1) * loss_r + 0.5 * log_var1
+        loss_s_w = tf.exp(-log_var2) * loss_s + 0.5 * log_var2
+        total    = tf.reduce_mean(loss_r_w + loss_s_w)
+
         return {
-            "loss": total_loss,
-            "loss_return": tf.reduce_mean(loss_return),
-            "loss_spread": tf.reduce_mean(loss_spread)
+            "loss":        total,
+            "loss_return": tf.reduce_mean(loss_r),
+            "loss_spread": tf.reduce_mean(loss_s),
         }
 
 
+# ── Lưu / Load helpers ───────────────────────────────────────────────
+def save_multitask_model(model, path):
+    """
+    Lưu backbone (Functional) ra file .keras + weights của wrapper.
+    path: ví dụ 'models/transformer_model_VNM.VN.keras'
+    """
+    # Lưu backbone Functional model — serialize an toàn
+    model.backbone.save(path)
+
+
+def load_multitask_model(path, input_shape, learning_rate=1e-4):
+    """
+    Load backbone từ .keras, bọc lại vào MultiTaskModel mới.
+    Trả về MultiTaskModel đã compile, sẵn sàng predict/extract features.
+    """
+    custom_objs = {
+        'PositionalEmbedding':    PositionalEmbedding,
+        'TimeDecayAttention':     TimeDecayAttention,
+        'UncertaintyWeightsLayer': UncertaintyWeightsLayer,
+    }
+    backbone = tf.keras.models.load_model(path, custom_objects=custom_objs, safe_mode=False)
+    model = MultiTaskModel(backbone=backbone)
+    model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate))
+    # Build bằng cách forward dummy
+    dummy = np.zeros((1,) + input_shape, dtype=np.float32)
+    model(dummy, training=False)
+    return model
+
+
+# ── GLU helper ───────────────────────────────────────────────────────
 def glu(x, d_model):
-    gate = Dense(d_model, activation="sigmoid", kernel_regularizer=tf.keras.regularizers.l2(1e-4))(x)
-    linear = Dense(d_model, kernel_regularizer=tf.keras.regularizers.l2(1e-4))(x)
+    gate   = Dense(d_model, activation='sigmoid',
+                   kernel_regularizer=tf.keras.regularizers.l2(1e-4))(x)
+    linear = Dense(d_model,
+                   kernel_regularizer=tf.keras.regularizers.l2(1e-4))(x)
     return Multiply()([linear, gate])
 
 
-def build_transformer(input_shape, d_model=128, dropout_rate=0.3, learning_rate=1e-4, multi_task=True):
+# ── build_transformer ────────────────────────────────────────────────
+def build_transformer(input_shape, d_model=128, heads=8, dropout_rate=0.3,
+                      learning_rate=1e-4, multi_task=True):
     """
-    Xây dựng kiến trúc Transformer Phân Nhánh để học các nhóm đặc trưng độc lập:
-    - Nhánh 1 (Giá & Động lượng): 12 đặc trưng
-    - Nhánh 2 (Khối lượng & Biến động): 6 đặc trưng
-    - Nhánh 3 (Kỹ thuật, Vĩ mô & Lịch): 16 đặc trưng
+    Trả về:
+      - multi_task=True : MultiTaskModel (subclass) bọc backbone Functional
+  - multi_task=False: Functional model thông thường
     """
     inputs = Input(shape=input_shape)
-    
-    # Chia tách nhánh bằng Lambda layers để đảm bảo tương thích serialization
-    x_price = tf.keras.layers.Lambda(lambda x: x[:, :, 0:12], name="slice_price")(inputs)
+
+    x_price  = tf.keras.layers.Lambda(lambda x: x[:, :,  0:12], name="slice_price")(inputs)
     x_volume = tf.keras.layers.Lambda(lambda x: x[:, :, 12:18], name="slice_volume")(inputs)
-    x_tech = tf.keras.layers.Lambda(lambda x: x[:, :, 18:34], name="slice_tech")(inputs)
-    
-    # --- NHÁNH 1: GIÁ & ĐỘNG LƯỢNG (12 feats -> d=64) ---
-    p = Conv1D(64, 3, padding='same', activation='relu', kernel_regularizer=tf.keras.regularizers.l2(1e-4))(x_price)
-    p = LayerNormalization(epsilon=1e-6)(p)
-    p = glu(p, 64)
-    p = LayerNormalization(epsilon=1e-6)(p)
-    p = PositionalEmbedding(sequence_length=input_shape[0], d_model=64)(p)
-    p_attn = TimeDecayAttention(num_heads=4, key_dim=16, dropout_rate=dropout_rate)(p)
-    p = LayerNormalization(epsilon=1e-6)(p + p_attn)
-    p_out = Bidirectional(GRU(16, return_sequences=False, kernel_regularizer=tf.keras.regularizers.l2(1e-4)))(p)
-    p_emb = Dense(16, activation="relu", name="latent_price", kernel_regularizer=tf.keras.regularizers.l2(1e-4))(p_out)
-    
-    # --- NHÁNH 2: KHỐI LƯỢNG & BIẾN ĐỘNG (6 feats -> d=32) ---
-    v = Conv1D(32, 3, padding='same', activation='relu', kernel_regularizer=tf.keras.regularizers.l2(1e-4))(x_volume)
-    v = LayerNormalization(epsilon=1e-6)(v)
-    v = glu(v, 32)
-    v = LayerNormalization(epsilon=1e-6)(v)
-    v = PositionalEmbedding(sequence_length=input_shape[0], d_model=32)(v)
-    v_attn = TimeDecayAttention(num_heads=2, key_dim=16, dropout_rate=dropout_rate)(v)
-    v = LayerNormalization(epsilon=1e-6)(v + v_attn)
-    v_out = Bidirectional(GRU(8, return_sequences=False, kernel_regularizer=tf.keras.regularizers.l2(1e-4)))(v)
-    v_emb = Dense(8, activation="relu", name="latent_volume", kernel_regularizer=tf.keras.regularizers.l2(1e-4))(v_out)
-    
-    # --- NHÁNH 3: KỸ THUẬT, VĨ MÔ & LỊCH (16 feats -> d=32) ---
-    t = Conv1D(32, 3, padding='same', activation='relu', kernel_regularizer=tf.keras.regularizers.l2(1e-4))(x_tech)
-    t = LayerNormalization(epsilon=1e-6)(t)
-    t = glu(t, 32)
-    t = LayerNormalization(epsilon=1e-6)(t)
-    t = PositionalEmbedding(sequence_length=input_shape[0], d_model=32)(t)
-    t_attn = TimeDecayAttention(num_heads=2, key_dim=16, dropout_rate=dropout_rate)(t)
-    t = LayerNormalization(epsilon=1e-6)(t + t_attn)
-    t_out = Bidirectional(GRU(8, return_sequences=False, kernel_regularizer=tf.keras.regularizers.l2(1e-4)))(t)
-    t_emb = Dense(8, activation="relu", name="latent_tech", kernel_regularizer=tf.keras.regularizers.l2(1e-4))(t_out)
-    
-    # Ghép 3 không gian ẩn thành Bottleneck 32 chiều
-    embedding = tf.keras.layers.Concatenate(name="latent_embedding")([p_emb, v_emb, t_emb])
-    
+    x_tech   = tf.keras.layers.Lambda(lambda x: x[:, :, 18:34], name="slice_tech")(inputs)
+
+    def branch(x, filters, heads, key_dim, gru_units, latent_dim, name):
+        x = Conv1D(filters, 3, padding='same', activation='relu',
+                   kernel_regularizer=tf.keras.regularizers.l2(1e-4))(x)
+        x = LayerNormalization(epsilon=1e-6)(x)
+        x = glu(x, filters)
+        x = LayerNormalization(epsilon=1e-6)(x)
+        x = PositionalEmbedding(sequence_length=input_shape[0],
+                                d_model=filters)(x)
+        a = TimeDecayAttention(num_heads=heads, key_dim=key_dim,
+                               dropout_rate=dropout_rate)(x)
+        x = LayerNormalization(epsilon=1e-6)(x + a)
+        x = Bidirectional(GRU(gru_units, return_sequences=False,
+                              kernel_regularizer=tf.keras.regularizers.l2(1e-4)))(x)
+        return Dense(latent_dim, activation='relu', name=name,
+                     kernel_regularizer=tf.keras.regularizers.l2(1e-4))(x)
+
+    p_emb = branch(x_price,  64, heads, 16, 16, 16, "latent_price")
+    v_emb = branch(x_volume, 32, heads, 16,  8,  8, "latent_volume")
+    t_emb = branch(x_tech,   32, heads, 16,  8,  8, "latent_tech")
+
+    embedding = Concatenate(name="latent_embedding")([p_emb, v_emb, t_emb])
+
     if multi_task:
-        # Nhúng layer lưu weights bất định vào graph để được tự động serialize
-        embedding_weighted = UncertaintyWeightsLayer(name="uncertainty_weights")(embedding)
-        output_return = Dense(1, name="output_return")(embedding_weighted)
-        output_spread = Dense(1, name="output_spread")(embedding_weighted)
-        model = MultiTaskModel(inputs=inputs, outputs=[output_return, output_spread])
-        
-        optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
-        model.compile(optimizer=optimizer)
+        ew    = UncertaintyWeightsLayer(name="uncertainty_weights")(embedding)
+        out_r = Dense(1, name="output_return")(ew)
+        out_s = Dense(1, name="output_spread")(ew)
+
+        # Backbone là Functional model thuần — serialize được
+        backbone = Model(inputs=inputs, outputs=[out_r, out_s], name="backbone")
+
+        # Wrapper subclass — dùng để train với custom train_step
+        model = MultiTaskModel(backbone=backbone, name="multi_task_model")
+        model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate))
+
+        # Build ngay để .inputs hoạt động
+        dummy = np.zeros((1,) + input_shape, dtype=np.float32)
+        model(dummy, training=False)
+        return model
     else:
-        output_return = Dense(1, name="output_return")(embedding)
-        model = Model(inputs=inputs, outputs=output_return)
-        optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
-        model.compile(optimizer=optimizer, loss="huber")
-        
-    return model
+        out_r = Dense(1, name="output_return")(embedding)
+        model = Model(inputs=inputs, outputs=out_r)
+        model.compile(
+            optimizer=tf.keras.optimizers.Adam(learning_rate),
+            loss='huber',
+        )
+        return model
 
 
 if __name__ == "__main__":
     import sys
-    import os
     if hasattr(sys.stdout, 'reconfigure'):
         sys.stdout.reconfigure(encoding='utf-8')
-    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-    print("=== TESTING AI MODEL ARCHITECTURES ===")
-    sample_shape = (45, 34)
-    trans_m = build_transformer(sample_shape)
-    print(f"Transformer model built successfully! Output shapes: {[o.name for o in trans_m.outputs]}")
+    print("=== TESTING AI MODEL ===")
+    m = build_transformer((45, 34))
+    print("outputs:", [o.name for o in m.backbone.outputs])
+    print("inputs :", m.inputs)
+
+    # Test save/load
+    save_multitask_model(m, "/tmp/test_model.keras")
+    m2 = load_multitask_model("/tmp/test_model.keras", (45, 34))
+    dummy = np.zeros((2, 45, 34), dtype=np.float32)
+    out = m2(dummy, training=False)
+    print("Load OK, output shapes:", [o.shape for o in out])
