@@ -36,18 +36,18 @@ class Orchestrator:
 
         ticker_upper = ticker.upper()
         if not override_kill_switch and not TRADING_ENABLED.get(ticker_upper, True):
-            reasoning = f"Giao dịch live cho {ticker_upper} đã bị tắt qua kill switch do hiệu suất lịch sử không đạt yêu cầu."
+            reasoning = f"Tính năng tự động giao dịch cho {ticker_upper} tạm thời bị khóa vì hiệu suất đầu tư lịch sử không ổn định."
             if ticker_upper == 'VNM.VN':
-                reasoning = "Giao dịch live cho VNM.VN đã bị tắt qua kill switch do hiệu suất kém (Sharpe -1.25 rolling backtest)."
+                reasoning = "Giao dịch tự động cho VNM.VN tạm thời bị khóa nhằm bảo vệ tài sản do hiệu suất sinh lời quá thấp so với mức rủi ro trong quá khứ."
             elif ticker_upper == 'META':
-                reasoning = "Giao dịch live cho META tạm thời bị tắt qua kill switch (Sharpe 0.38 và MDD -38%) để chờ so sánh dữ liệu B&H."
+                reasoning = "Giao dịch tự động cho META tạm thời bị khóa để tránh rủi ro sụt giảm tài sản lớn, hệ thống đang tạm ngưng quan sát thêm."
             
             return TradingDecision(
                 action="HOLD",
                 confidence_score=0.0,
                 stop_loss=0.0,
                 take_profit=0.0,
-                debate_summary="Giao dịch cho mã này hiện đang bị tạm tắt (Kill Switch).",
+                debate_summary="Chế độ tự động giao dịch cho mã này hiện đang bị khóa để bảo vệ tài khoản (Kill Switch).",
                 reasoning=reasoning
             )
 
@@ -69,7 +69,10 @@ class Orchestrator:
                     system_prompt=(
                         "You are an expert investment orchestrator. You analyze four specialized stock reports "
                         "(Technical, Sentiment, Macro, Risk) and conduct a simulated debate between a Bullish Analyst "
-                        "and a Bearish Analyst. You then synthesize their debate and output a structured decision."
+                        "and a Bearish Analyst. You then synthesize their debate and output a structured decision. "
+                        "IMPORTANT: You must write the 'debate_summary' and 'reasoning' in clear, simple Vietnamese "
+                        "suitable for non-technical users (avoid using complex financial or technical jargon directly, "
+                        "explain metrics like Sharpe or Kill Switch in simple terms if you refer to them)."
                     )
                 )
 
@@ -82,7 +85,7 @@ class Orchestrator:
                     f"{risk_rep}\n\n"
                     "Simulate a debate between 'Bullish Analyst' and 'Bearish Analyst', synthesize, and output "
                     "the final TradingDecision structure. Ensure Stop Loss and Take Profit are mathematically sound "
-                    "relative to the current Close Price."
+                    "relative to the current Close Price. Both 'debate_summary' and 'reasoning' MUST be written in Vietnamese."
                 )
 
                 # Synchronous run (blocking call for simplicity in pipeline)
@@ -93,13 +96,23 @@ class Orchestrator:
                 pass
 
         # 2. Heuristic Fallback Mode
-        # Parse biases from sub-reports
-        is_tech_bull = "Bullish" in tech_rep
-        is_tech_bear = "Bearish" in tech_rep
-        is_sent_bull = "Positive" in sent_rep or "Risk-On" in sent_rep
-        is_sent_bear = "Negative" in sent_rep or "Risk-Off" in sent_rep
-        is_macro_bull = "Bullish" in macro_rep or "Risk-On" in macro_rep
-        is_macro_bear = "Bearish" in macro_rep or "Risk-Off" in macro_rep
+        # Parse biases from sub-reports (only the specific bias lines to avoid matching text in parentheses)
+        def extract_bias_line(report_text, label):
+            for line in report_text.splitlines():
+                if label in line:
+                    return line
+            return ""
+
+        tech_bias_line = extract_bias_line(tech_rep, "Technical Bias:")
+        sent_bias_line = extract_bias_line(sent_rep, "Sentiment Bias:")
+        macro_bias_line = extract_bias_line(macro_rep, "Macro Bias:")
+
+        is_tech_bull = "Bullish" in tech_bias_line
+        is_tech_bear = "Bearish" in tech_bias_line
+        is_sent_bull = "Positive" in sent_bias_line or "Risk-On" in sent_bias_line
+        is_sent_bear = "Negative" in sent_bias_line or "Risk-Off" in sent_bias_line
+        is_macro_bull = "Bullish" in macro_bias_line or "Risk-On" in macro_bias_line
+        is_macro_bear = "Bearish" in macro_bias_line or "Risk-Off" in macro_bias_line
 
         bull_votes = sum([is_tech_bull, is_sent_bull, is_macro_bull])
         bear_votes = sum([is_tech_bear, is_sent_bear, is_macro_bear])
@@ -118,26 +131,24 @@ class Orchestrator:
         if bull_votes > bear_votes and bull_votes >= 2:
             action = "BUY"
             confidence = 0.6 + 0.1 * (bull_votes - bear_votes)
-            reasoning = "Consensus bullish signals across Technical, Sentiment, and Macro reports."
+            reasoning = "Đồng thuận tín hiệu MUA vào từ tất cả các chuyên gia (Kỹ thuật tốt, Tin tức tích cực và Vĩ mô ổn định)."
         elif bear_votes > bull_votes and bear_votes >= 2:
             action = "SELL"
             confidence = 0.6 + 0.1 * (bear_votes - bull_votes)
-            reasoning = "Consensus bearish signals across Technical, Sentiment, and Macro reports."
+            reasoning = "Đồng thuận tín hiệu BÁN ra từ các chuyên gia (Kỹ thuật xấu, Tin tức tiêu cực và Vĩ mô bất ổn)."
             stop_loss = 0.0
             take_profit = 0.0
         else:
             action = "HOLD"
             confidence = 0.5
-            reasoning = "Mixed or neutral indicators across specialized reports; recommending cash preservation."
+            reasoning = "Tín hiệu thị trường đang trái chiều và chưa rõ ràng; khuyến nghị tiếp tục đứng ngoài quan sát để bảo toàn dòng tiền."
             stop_loss = 0.0
             take_profit = 0.0
 
-        # Create debate summary
+        # Tạo tóm tắt tranh luận tiếng Việt đơn giản dễ hiểu
         debate = (
-            f"Bullish Analyst: Argues that Technical buy triggers ({is_tech_bull}) or macro risk-on regimes ({is_macro_bull}) "
-            f"justify opening a position.\n"
-            f"Bearish Analyst: Counters that news headwind ({is_sent_bear}) or structural macro risks ({is_macro_bear}) "
-            f"could trigger downside pressure."
+            f"Phân tích Tăng giá (Bullish): Cho rằng tín hiệu kỹ thuật tốt ({'Đúng' if is_tech_bull else 'Sai'}) hoặc vĩ mô ổn định ({'Đúng' if is_macro_bull else 'Sai'}) ủng hộ việc mua vào.\n"
+            f"Phân tích Giảm giá (Bearish): Cảnh báo rằng tin tức xấu ({'Có' if is_sent_bear else 'Không'}) hoặc rủi ro vĩ mô lớn ({'Có' if is_macro_bear else 'Không'}) có thể gây áp lực giảm giá."
         )
 
         return TradingDecision(

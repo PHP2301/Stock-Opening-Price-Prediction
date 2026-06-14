@@ -12,14 +12,10 @@ class TechnicalAgent:
         
         report = f"--- Technical Report for {ticker} ---\n"
         report += f"1. AI Model Forecasts:\n"
-        report += f"   - Transformer predicted return: T+1: {t1:+.4f}, T+2: {t2:+.4f}, T+3: {t3:+.4f}\n"
+        report += f"   - Transformer (Model 1) predicted return: T+1: {t1:+.4f}, T+2: {t2:+.4f}, T+3: {t3:+.4f}\n"
         if xgb_preds is not None:
-            report += f"   - XGBoost predicted return: T+1: {x1:+.4f}, T+2: {x2:+.4f}, T+3: {x3:+.4f}\n"
-            # Consensus return
-            c1 = 0.5 * t1 + 0.5 * x1
-            c2 = 0.5 * t2 + 0.5 * x2
-            c3 = 0.5 * t3 + 0.5 * x3
-            report += f"   - Consensus Return: T+1: {c1:+.4f}, T+2: {c2:+.4f}, T+3: {c3:+.4f}\n"
+            report += f"   - Hybrid XGBoost (Model 2) predicted return: T+1: {x1:+.4f}, T+2: {x2:+.4f}, T+3: {x3:+.4f}\n"
+            c1, c2, c3 = x1, x2, x3
         else:
             c1, c2, c3 = t1, t2, t3
 

@@ -286,12 +286,12 @@ def glu(x, d_model):
 
 
 # ── build_transformer ────────────────────────────────────────────────
-def build_transformer(input_shape, d_model=128, num_heads=8, dropout_rate=0.3,
+def build_transformer(input_shape, d_model=128, num_heads=8, key_dim=16, dropout_rate=0.3,
                       learning_rate=1e-4, multi_task=True):
     """
     Trả về:
       - multi_task=True : MultiTaskModel (subclass) bọc backbone Functional
-  - multi_task=False: Functional model thông thường
+      - multi_task=False: Functional model thông thường
     """
     inputs = Input(shape=input_shape)
 
@@ -300,7 +300,7 @@ def build_transformer(input_shape, d_model=128, num_heads=8, dropout_rate=0.3,
     x_tech   = tf.keras.layers.Lambda(lambda x: x[:, :, 18:34], name="slice_tech")(inputs)
     x_flow_div = tf.keras.layers.Lambda(lambda x: x[:, :, 34:42], name="slice_flow_div")(inputs)
 
-    def branch(x, filters, num_heads_branch, key_dim, gru_units, latent_dim, name):
+    def branch(x, filters, num_heads_branch, key_dim_branch, gru_units, latent_dim, name):
         x = Conv1D(filters, 3, padding='same', activation='relu',
                    kernel_regularizer=tf.keras.regularizers.l2(1e-4))(x)
         x = LayerNormalization(epsilon=1e-6)(x)
@@ -308,7 +308,7 @@ def build_transformer(input_shape, d_model=128, num_heads=8, dropout_rate=0.3,
         x = LayerNormalization(epsilon=1e-6)(x)
         x = PositionalEmbedding(sequence_length=input_shape[0],
                                 d_model=filters)(x)
-        a = TimeDecayAttention(num_heads=num_heads_branch, key_dim=key_dim,
+        a = TimeDecayAttention(num_heads=num_heads_branch, key_dim=key_dim_branch,
                                dropout_rate=dropout_rate)(x)
         x = LayerNormalization(epsilon=1e-6)(x + a)
         x = Bidirectional(GRU(gru_units, return_sequences=False,
@@ -316,10 +316,10 @@ def build_transformer(input_shape, d_model=128, num_heads=8, dropout_rate=0.3,
         return Dense(latent_dim, activation='relu', name=name,
                      kernel_regularizer=tf.keras.regularizers.l2(1e-4))(x)
 
-    p_emb = branch(x_price,  64, num_heads, 16, 16, 16, "latent_price")
-    v_emb = branch(x_volume, 32, num_heads, 16,  8,  8, "latent_volume")
-    t_emb = branch(x_tech,   32, num_heads, 16,  8,  8, "latent_tech")
-    f_emb = branch(x_flow_div, 32, num_heads, 16,  8,  8, "latent_flow_div")
+    p_emb = branch(x_price,  64, num_heads, key_dim, 16, 16, "latent_price")
+    v_emb = branch(x_volume, 32, num_heads, key_dim,  8,  8, "latent_volume")
+    t_emb = branch(x_tech,   32, num_heads, key_dim,  8,  8, "latent_tech")
+    f_emb = branch(x_flow_div, 32, num_heads, key_dim,  8,  8, "latent_flow_div")
 
     embedding = Concatenate(name="latent_embedding")([p_emb, v_emb, t_emb, f_emb])
 

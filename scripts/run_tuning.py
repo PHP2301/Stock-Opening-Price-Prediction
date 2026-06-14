@@ -68,6 +68,7 @@ def objective(trial):
     # ── Gợi ý siêu tham số từ search space riêng của ticker ──────
     d_model       = trial.suggest_categorical('d_model',      space['d_model'])
     num_heads     = trial.suggest_categorical('num_heads',    space['num_heads'])
+    key_dim       = trial.suggest_categorical('key_dim',      [8, 16, 32])
     dropout_rate  = trial.suggest_float('dropout_rate',       0.1, 0.4)
     learning_rate = trial.suggest_float('learning_rate',      1e-5, 5e-4, log=True)
     batch_size    = trial.suggest_categorical('batch_size',   [32, 64])
@@ -81,6 +82,7 @@ def objective(trial):
         input_shape=(_X_train.shape[1], _X_train.shape[2]),
         d_model=d_model,
         num_heads=num_heads,
+        key_dim=key_dim,
         dropout_rate=dropout_rate,
         learning_rate=learning_rate,
         multi_task=True,
@@ -203,6 +205,7 @@ def run_tuning_for_ticker(t_ticker: str):
     save_params = {
         'd_model':       best['d_model'],
         'num_heads':     best['num_heads'],
+        'key_dim':       best['key_dim'],
         'dropout_rate':  best['dropout_rate'],
         'learning_rate': best['learning_rate'],
         'batch_size':    best['batch_size'],

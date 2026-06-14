@@ -38,3 +38,33 @@ class RiskAgent:
         report += f"   - Position Size Recommendation: {size_pct:.1f}% of total capital\n"
         report += f"   - Commentary: {comment}\n"
         return report
+
+    def calculate_position_size(self, confidence_score: float, win_rate_history: float,
+                                close_price: float, stop_loss: float, take_profit: float) -> dict:
+        """
+        Calculates optimal position size using the Kelly Criterion.
+        Uses p = min(confidence_score, win_rate_history) to prevent overleveraging.
+        """
+        denom = close_price - stop_loss
+        num = take_profit - close_price
+        R = num / denom if denom > 0 else 2.00
+        
+        p = min(confidence_score, win_rate_history)
+        
+        kelly_raw = 0.0
+        kelly_half = 0.0
+        kelly_size_pct = 0.0
+        
+        if R > 0:
+            # Kelly Formula: f* = (p * R - (1 - p)) / R
+            kelly_raw = (p * R - (1.0 - p)) / R
+            kelly_half = max(kelly_raw, 0.0) / 2.0
+            kelly_size_pct = min(kelly_half, 0.25) * 100.0
+            
+        return {
+            "p": p,
+            "R": R,
+            "kelly_raw": kelly_raw,
+            "kelly_half": kelly_half,
+            "kelly_size_pct": kelly_size_pct
+        }

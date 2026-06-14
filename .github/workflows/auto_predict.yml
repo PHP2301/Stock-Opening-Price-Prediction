@@ -1,0 +1,35 @@
+name: Daily Stock Prediction & Telegram Alert
+
+on:
+  schedule:
+    # Chạy vào lúc 10:00 UTC (tức là 17:00 giờ Việt Nam ICT) hàng ngày
+    - cron: '0 10 * * *'
+  workflow_dispatch: # Cho phép kích hoạt chạy thủ công từ giao diện GitHub
+
+jobs:
+  predict:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run Stock Prediction and Send Telegram Alert
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        # Nếu có API Key khác có thể cấu hình thêm ở đây
+      run: |
+        python scripts/predict.py ALL

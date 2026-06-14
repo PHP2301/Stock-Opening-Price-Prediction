@@ -1,4 +1,4 @@
-import os, sys, datetime, random, joblib
+import os, sys, datetime, random, joblib, json
 import numpy as np
 import pandas as pd
 import matplotlib
@@ -277,11 +277,11 @@ def run_walk_forward_evaluation(dates, equity, bh_equity):
 
 
 def main():
-    trans_only = False
+    trans_only = True
     args_cleaned = []
     for arg in sys.argv:
-        if arg.lower() == "--trans-only":
-            trans_only = True
+        if arg.lower() == "--xgb-hybrid":
+            trans_only = False
         else:
             args_cleaned.append(arg)
 
@@ -434,6 +434,24 @@ def main():
         plt.savefig(plot_path, dpi=300)
         plt.close()
         print(f"💾 {plot_path}")
+
+        # Lưu hiệu suất backtest vào JSON
+        config_dir = os.path.join(ROOT_DIR, 'config')
+        os.makedirs(config_dir, exist_ok=True)
+        perf_path = os.path.join(config_dir, f'performance_metrics_{ticker}.json')
+        perf_data = {
+            'overall_win_rate': win_rate / 100.0,
+            'total_trades': total_lnhs,
+            'profit_factor': profit_factor,
+            'strat_return': metrics['strat_return'],
+            'bh_return': metrics['bh_return'],
+            'sharpe': metrics['sharpe'],
+            'max_drawdown': metrics['mdd'],
+            'timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+        with open(perf_path, 'w', encoding='utf-8') as f:
+            json.dump(perf_data, f, indent=4)
+        print(f"💾 Đã lưu hiệu suất backtest vào: {perf_path}")
 
 
 if __name__ == "__main__":

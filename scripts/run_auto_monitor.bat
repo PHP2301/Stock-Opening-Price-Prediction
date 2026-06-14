@@ -1,9 +1,10 @@
 @echo off
 :: Cấu hình UTF-8 để hiển thị tiếng Việt không bị lỗi font trên cmd Windows
 chcp 65001 > nul
+title 🚀 BACKGROUND STOCK MONITOR & AUTO PREDICTOR
 
 echo =====================================================================
-echo    🚀 HỆ THỐNG DỰ BÁO GIÁ MỞ CỬA - PIPELINE HUẤN LUYỆN THỦ CÔNG
+echo    🚀 HỆ THỐNG GIÁM SÁT TỰ ĐỘNG KHẨN CẤP & TỰ ĐỘNG DỰ BÁO CUỐI NGÀY
 echo =====================================================================
 echo [*] Đang chuyển đến thư mục dự án...
 cd /d "%~dp0.."
@@ -17,14 +18,15 @@ if exist .venv\Scripts\activate.bat (
     exit /b 1
 )
 
-echo [*] Đang bắt đầu chạy pipeline huấn luyện chéo và dự báo mới...
-python scripts/run_training.py
+echo [*] Đang bắt đầu chạy Background Monitor tự động...
+echo [!] Bạn hãy để cửa sổ này chạy ngầm để tự động quét tin tức sập mạng / bán tháo
+echo     và gửi báo cáo Telegram hàng ngày.
+echo.
+
+python scripts/auto_monitor.py
 
 echo.
 echo =====================================================================
-echo    🏆 PIPELINE ĐÃ HOÀN TẤT THÀNH CÔNG!
-echo    - Xem log chi tiết tại: logs/train_predictions_history.txt
-echo    - Xem biểu đồ so sánh tại: reports/figures/
+echo    ⚠️ TIẾN TRÌNH MONITOR ĐÃ DỪNG!
 echo =====================================================================
-echo.
 pause

@@ -87,11 +87,11 @@ def evaluate_predictions(y_true, y_pred, model_name, ticker):
 
 
 def log_prediction_to_file(ticker, last_date, last_close, risk_level, risk_ratio,
-                            xgb_vals, xgb_lowers, xgb_uppers, trans_vals, trans_lowers, trans_uppers,
+                            xgb_vals, xgb_lowers, xgb_uppers,
                             rate_today=None, next_dates=None):
     logs_dir = os.path.join(ROOT_DIR, "logs")
     os.makedirs(logs_dir, exist_ok=True)
-    log_path  = os.path.join(logs_dir, "predictions_history.txt")
+    log_path  = os.path.join(logs_dir, "train_predictions_history.txt")
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     def trend(pred_val, ref):
@@ -109,26 +109,19 @@ def log_prediction_to_file(ticker, last_date, last_close, risk_level, risk_ratio
         f.write(f"Rủi ro biến động: {risk_level} (Tỷ lệ: {risk_ratio:.2f}%)\n")
         if rate_today:
             f.write(f"Tỷ giá USD/VND quy đổi: 1 USD = {format_vn(rate_today)} VNĐ\n")
-        f.write("Dự báo Hybrid XGBoost:\n")
+        
+        f.write("Dự báo Hybrid XGBoost (3 ngày):\n")
         for h in range(3):
             date_str = next_dates[h] if next_dates else f"T+{h+1}"
             f.write(f"  ➔ T+{h+1} ({date_str}): {format_vn(xgb_vals[h])} VNĐ")
             if rate_today:
                 f.write(f" (${xgb_vals[h]/rate_today:.2f} USD)")
             f.write(f" {trend(xgb_vals[h], last_close)} | Khoảng an toàn: [{format_vn(xgb_lowers[h])} - {format_vn(xgb_uppers[h])}] VNĐ\n")
-        
-        f.write("Dự báo Transformer:\n")
-        for h in range(3):
-            date_str = next_dates[h] if next_dates else f"T+{h+1}"
-            f.write(f"  ➔ T+{h+1} ({date_str}): {format_vn(trans_vals[h])} VNĐ")
-            if rate_today:
-                f.write(f" (${trans_vals[h]/rate_today:.2f} USD)")
-            f.write(f" {trend(trans_vals[h], last_close)} | Khoảng an toàn: [{format_vn(trans_lowers[h])} - {format_vn(trans_uppers[h])}] VNĐ\n")
         f.write("-" * 50 + "\n\n")
 
 
 def main():
-    print("🚀 Khởi động Hybrid Training Pipeline (Transformer → XGBoost)...")
+    print("🚀 Khởi động Training Pipeline (Transformer)...")
 
     TICKERS    = ["VNM.VN", "GOOGL", "META"]
     START_TRAIN = "2010-01-01"
@@ -157,29 +150,29 @@ def main():
             sentiment_engine=SENTIMENT_ENGINE,
         )
 
+        # 1. Tải và xử lý dữ liệu thông qua DataTransformer
         dt = DataTransformer(time_steps=LOOKBACK_WINDOW)
-        X_scaled, y_scaled, y_spread_scaled = dt.fit_transform_train_only(df, train_ratio=0.8)
-        X_3D, y_3D, y_spread_3D = dt.create_sliding_windows(X_scaled, y_scaled, y_spread_scaled)
+        
+        # Xác định khoảng thời gian huấn luyện (5 năm đầu làm train/val)
+        df_sorted = df.sort_values('date').reset_index(drop=True)
+        first_date = df_sorted['date'].iloc[0]
+        five_years_end = first_date + pd.DateOffset(years=5)
+        six_years_end = first_date + pd.DateOffset(years=6)
+        
+        df_phase1 = df_sorted[df_sorted['date'] < five_years_end].copy()
+        df_test_year6 = df_sorted[(df_sorted['date'] >= five_years_end) & (df_sorted['date'] < six_years_end)].copy()
+        df_phase2 = df_sorted[df_sorted['date'] < six_years_end].copy()
 
-        X_train_i, y_train_i, X_test_i, y_test_i, y_test_raw_i, y_train_spread_i, y_test_spread_i = \
-            dt.split_train_test_chronological(df, X_3D, y_3D, y_spread_3D, train_ratio=0.8)
-
-        val_size = int(len(X_train_i) * 0.1)
-        purge = 45
-        if val_size > 0 and len(X_train_i) - val_size - purge > 0:
-            train_end = len(X_train_i) - val_size - purge
-            X_tr, y_tr = X_train_i[:train_end], y_train_i[:train_end]
-            X_va, y_va = X_train_i[-val_size:], y_train_i[-val_size:]
-            y_tr_spread = y_train_spread_i[:train_end]
-            y_va_spread = y_train_spread_i[-val_size:]
-        else:
-            X_tr, y_tr = X_train_i, y_train_i
-            X_va, y_va = X_test_i, y_test_i
-            y_tr_spread = y_train_spread_i
-            y_va_spread = y_test_spread_i
+        # Pha 1: Fit transformer trên dữ liệu 5 năm đầu
+        X_scaled_p1, y_scaled_p1, y_spread_scaled_p1 = dt.fit_transform_train_only(df_phase1, train_ratio=0.9)
+        X_3D_p1, y_3D_p1, y_spread_3D_p1 = dt.create_sliding_windows(X_scaled_p1, y_scaled_p1, y_spread_scaled_p1)
+        
+        # Chronological Split cho tập Train/Val của Pha 1
+        X_train_p1, y_train_p1, X_val_p1, y_val_p1, _, y_train_spread_p1, y_val_spread_p1 = \
+            dt.split_train_test_chronological(df_phase1, X_3D_p1, y_3D_p1, y_spread_3D_p1, train_ratio=0.9)
 
         # ── Load hyperparams ───────────────────────────────────────────
-        d_model, num_heads, dropout_rate, learning_rate, batch_size = 128, 8, 0.3, 1e-4, 64
+        d_model, num_heads, key_dim, dropout_rate, learning_rate, batch_size = 128, 8, 16, 0.3, 1e-4, 64
         for path in [
             os.path.join(ROOT_DIR, 'config', f'best_transformer_params_{ticker}.json'),
             os.path.join(ROOT_DIR, 'config', 'best_transformer_params.json'),
@@ -190,21 +183,18 @@ def main():
                         p = json.load(f)
                     d_model      = p.get('d_model', d_model)
                     num_heads    = p.get('num_heads', p.get('heads', num_heads))
+                    key_dim      = p.get('key_dim', key_dim)
                     dropout_rate = p.get('dropout_rate', dropout_rate)
                     learning_rate = p.get('learning_rate', learning_rate)
                     batch_size   = p.get('batch_size', batch_size)
-                    print(f"🥇 Dùng params từ {os.path.basename(path)}: d_model={d_model}, heads={num_heads}")
+                    print(f"🥇 Dùng params từ {os.path.basename(path)}: d_model={d_model}, heads={num_heads}, key_dim={key_dim}")
                 except Exception as e:
                     print(f"⚠️ Không đọc được {path}: {e}")
                 break
 
         trans_latest_path = os.path.join(models_dir, f'transformer_model_{ticker}.keras')
 
-        # ════════════════════════════════════════════════════════════════
-        # SỬA: RETRAIN_TRANSFORMER flag
-        # Nếu False + file đã tồn tại → load Transformer từ run_training_transformer.py
-        # Không ghi đè kết quả tốt nhất
-        # ════════════════════════════════════════════════════════════════
+        # ── PHA 1: Huấn luyện trên 5 năm đầu và đánh giá trên năm thứ 6 ──
         if not RETRAIN_TRANSFORMER and os.path.exists(trans_latest_path):
             print(f"♻️  [LOAD] Dùng Transformer đã train: {trans_latest_path}")
             from src.ai_models import PositionalEmbedding, TimeDecayAttention, UncertaintyWeightsLayer, MultiTaskModel
@@ -219,7 +209,7 @@ def main():
                 custom_objects=custom_objects,
                 safe_mode=False
             )
-            # Load scalers đã lưu (nếu có) để đồng bộ
+            # Load scalers đã lưu
             feat_scaler_path = os.path.join(models_dir, f'feature_scaler_{ticker}.pkl')
             targ_scaler_path = os.path.join(models_dir, f'target_scaler_{ticker}.pkl')
             if os.path.exists(feat_scaler_path):
@@ -227,24 +217,108 @@ def main():
             if os.path.exists(targ_scaler_path):
                 dt.target_scaler = joblib.load(targ_scaler_path)
         else:
-            # ── BƯỚC 1: K-Fold OOF cho XGBoost ─────────────────────────
-            # SỬA: TimeSeriesSplit(gap=45) thay vì KFold(shuffle=False)
-            # Đảm bảo thứ tự thời gian và có purge gap
-            print(f"🤖 [OOF] TimeSeriesSplit K=5, gap=45 để tạo OOF embeddings...")
-            tscv = TimeSeriesSplit(n_splits=5, gap=45)
-            X_train_latent_oof = np.zeros((len(X_train_i), 40))
+            print(f"🤖 [TRAIN - PHA 1] Transformer (5 năm đầu) cho {ticker}...")
+            transformer_model = build_transformer(
+                input_shape=(X_train_p1.shape[1], X_train_p1.shape[2]),
+                d_model=d_model,
+                num_heads=num_heads,
+                key_dim=key_dim,
+                dropout_rate=dropout_rate,
+                learning_rate=learning_rate,
+            )
+            transformer_model.fit(
+                X_train_p1,
+                {"output_return": y_train_p1, "output_spread": y_train_spread_p1},
+                validation_data=(X_val_p1, {"output_return": y_val_p1, "output_spread": y_val_spread_p1}),
+                epochs=250, batch_size=batch_size, callbacks=callbacks_main, verbose=2,
+            )
 
-            for fold, (train_idx, val_idx) in enumerate(tscv.split(X_train_i), 1):
+            # Đánh giá hiệu năng Pha 1 trên năm thứ 6
+            if len(df_test_year6) > LOOKBACK_WINDOW:
+                print(f"📊 [EVALUATE - PHA 1] Đang đánh giá trên năm thứ 6 (số phiên: {len(df_test_year6)})...")
+                # Dùng transform_df để chuẩn hóa dựa trên scaler Pha 1
+                df_test_full = pd.concat([df_phase1.tail(LOOKBACK_WINDOW), df_test_year6]).reset_index(drop=True)
+                test_features = dt.transform_df(df_test_full)
+                
+                # Trích xuất windows cho test set
+                X_test_scaled = dt.feature_scaler.transform(test_features.values)
+                X_test_3D, y_test_3D, _ = dt.create_sliding_windows(
+                    X_test_scaled, 
+                    np.zeros(len(X_test_scaled)), 
+                    np.zeros(len(X_test_scaled))
+                )
+                
+                # Thực hiện dự báo trên năm thứ 6
+                trans_pred_raw = transformer_model.predict(X_test_3D, verbose=0)
+                trans_pred_clean = get_return_output(trans_pred_raw)
+                trans_return = dt.target_scaler.inverse_transform(trans_pred_clean)
+                
+                # Giá đóng cửa tham chiếu
+                test_close = df_test_year6['close'].values
+                # Cắt bớt phần đầu khớp với window size
+                test_close_aligned = test_close[LOOKBACK_WINDOW:] if len(test_close) > LOOKBACK_WINDOW else test_close
+                min_len = min(len(test_close_aligned), len(trans_return))
+                
+                if min_len > 0:
+                    y_test_true = []
+                    # Tính toán y_test_true thực tế 3 ngày tới
+                    for idx in range(min_len):
+                        future_idx = min(idx + 3, len(test_close_aligned) - 1)
+                        y_test_true.append(test_close_aligned[future_idx])
+                    
+                    y_test_true = np.array(y_test_true).reshape(-1, 1)
+                    trans_preds = test_close_aligned[:min_len].reshape(-1, 1) * (1 + trans_return[:min_len])
+                    
+                    evaluate_predictions(y_test_true, trans_preds[:, 2:3], f"Transformer Pha 1 (Năm thứ 6 - {ticker})", ticker)
+
+                    # Lưu biểu đồ đánh giá Pha 1
+                    plt.figure(figsize=(15, 7))
+                    plt.plot(y_test_true[-100:, 0], label="Giá thực tế (T+3)", color='black', linewidth=2.5)
+                    plt.plot(trans_preds[-100:, 2], label="Transformer (T+3)", color='blue', linestyle='-.')
+                    plt.title(f"{ticker} — 100 phiên năm thứ 6 (Dự báo Pha 1)", fontsize=14, fontweight='bold')
+                    plt.xlabel("Phiên"); plt.ylabel("Giá (VNĐ)")
+                    plt.legend(); plt.grid(True, alpha=0.3)
+                    os.makedirs(results_dir, exist_ok=True)
+                    plt.savefig(os.path.join(results_dir, f'phase1_evaluate_{ticker}.png'), dpi=300)
+                    plt.close()
+
+            # ── PHA 2: Huấn luyện lại trên toàn bộ 6 năm ──
+            print(f"🤖 [TRAIN - PHA 2] Huấn luyện lại trên toàn bộ 6 năm...")
+            dt_p2 = DataTransformer(time_steps=LOOKBACK_WINDOW)
+            X_scaled_p2, y_scaled_p2, y_spread_scaled_p2 = dt_p2.fit_transform_train_only(df_phase2, train_ratio=0.9)
+            X_3D_p2, y_3D_p2, y_spread_3D_p2 = dt_p2.create_sliding_windows(X_scaled_p2, y_scaled_p2, y_spread_scaled_p2)
+            
+            X_train_p2, y_train_p2, X_val_p2, y_val_p2, _, y_train_spread_p2, y_val_spread_p2 = \
+                dt_p2.split_train_test_chronological(df_phase2, X_3D_p2, y_3D_p2, y_spread_3D_p2, train_ratio=0.9)
+
+            # Lọc bỏ các mẫu chứa NaN ở cuối sliding windows
+            train_mask = ~np.isnan(y_train_p2).any(axis=1) & ~np.isnan(y_train_spread_p2).any(axis=1)
+            X_train_p2 = X_train_p2[train_mask]
+            y_train_p2 = y_train_p2[train_mask]
+            y_train_spread_p2 = y_train_spread_p2[train_mask]
+
+            val_mask = ~np.isnan(y_val_p2).any(axis=1) & ~np.isnan(y_val_spread_p2).any(axis=1)
+            X_val_p2 = X_val_p2[val_mask]
+            y_val_p2 = y_val_p2[val_mask]
+            y_val_spread_p2 = y_val_spread_p2[val_mask]
+
+            # ── BƯỚC 1: K-Fold OOF cho XGBoost Stacking ──
+            print(f"🤖 [OOF] TimeSeriesSplit K=5, gap=45 để tạo OOF predictions cho XGBoost...")
+            tscv_oof = TimeSeriesSplit(n_splits=5, gap=45)
+            trans_pred_train_oof = np.zeros((len(X_train_p2), 3))
+
+            for fold, (train_idx, val_idx) in enumerate(tscv_oof.split(X_train_p2), 1):
                 print(f"   Fold {fold}/5 — train={len(train_idx)}, val={len(val_idx)}")
-                X_tr_f = X_train_i[train_idx];  y_tr_f = y_train_i[train_idx]
-                X_va_f = X_train_i[val_idx];    y_va_f = y_train_i[val_idx]
-                y_tr_s_f = y_train_spread_i[train_idx]
-                y_va_s_f = y_train_spread_i[val_idx]
+                X_tr_f, y_tr_f = X_train_p2[train_idx], y_train_p2[train_idx]
+                X_va_f, y_va_f = X_train_p2[val_idx], y_train_p2[val_idx]
+                y_tr_s_f = y_train_spread_p2[train_idx]
+                y_va_s_f = y_train_spread_p2[val_idx]
 
                 fold_model = build_transformer(
-                    input_shape=(X_train_i.shape[1], X_train_i.shape[2]),
+                    input_shape=(X_train_p2.shape[1], X_train_p2.shape[2]),
                     d_model=d_model,
                     num_heads=num_heads,
+                    key_dim=key_dim,
                     dropout_rate=dropout_rate,
                     learning_rate=learning_rate,
                 )
@@ -256,97 +330,36 @@ def main():
                     X_tr_f,
                     {"output_return": y_tr_f, "output_spread": y_tr_s_f},
                     validation_data=(X_va_f, {"output_return": y_va_f, "output_spread": y_va_s_f}),
-                    # SỬA: tăng epochs fold từ 35 → 60 để fold embedding gần với main model hơn
                     epochs=60, batch_size=batch_size, callbacks=fold_cb, verbose=0,
                 )
-                fold_extractor = Model(
-                    inputs=fold_model.inputs,
-                    outputs=fold_model.get_layer("latent_embedding").output,
-                )
-                X_train_latent_oof[val_idx] = fold_extractor.predict(X_va_f, verbose=0)
+                # Dự báo lợi nhuận thô OOF
+                fold_pred_raw = fold_model.predict(X_va_f, verbose=0)
+                fold_pred_clean = get_return_output(fold_pred_raw)
+                trans_pred_train_oof[val_idx] = fold_pred_clean
 
-            # ── BƯỚC 2: Train Transformer chính ─────────────────────────
-            print(f"🤖 [TRAIN] Transformer chính cho {ticker}...")
+            # ── BƯỚC 2: Train Transformer chính ──
+            print(f"🤖 [TRAIN - PHA 2] Transformer chính cho {ticker}...")
             transformer_model = build_transformer(
-                input_shape=(X_tr.shape[1], X_tr.shape[2]),
+                input_shape=(X_train_p2.shape[1], X_train_p2.shape[2]),
                 d_model=d_model,
                 num_heads=num_heads,
+                key_dim=key_dim,
                 dropout_rate=dropout_rate,
                 learning_rate=learning_rate,
             )
             transformer_model.fit(
-                X_tr,
-                {"output_return": y_tr, "output_spread": y_tr_spread},
-                validation_data=(X_va, {"output_return": y_va, "output_spread": y_va_spread}),
+                X_train_p2,
+                {"output_return": y_train_p2, "output_spread": y_train_spread_p2},
+                validation_data=(X_val_p2, {"output_return": y_val_p2, "output_spread": y_val_spread_p2}),
                 epochs=250, batch_size=batch_size, callbacks=callbacks_main, verbose=2,
             )
-        # ── BƯỚC 3: Feature extractor & XGBoost ───────────────────────
-        print(f"🔍 [EXTRACT] Trích latent features...")
-        feature_extractor = Model(
-            inputs=transformer_model.inputs,   # ← đổi .input → .inputs
-            outputs=transformer_model.get_layer("latent_embedding").output,
-        )
+            # Cập nhật DataTransformer chính là DataTransformer Pha 2
+            dt = dt_p2
 
-        if RETRAIN_TRANSFORMER or not os.path.exists(trans_latest_path):
-            X_train_today_all  = X_train_i[:, -1, :]
-            X_train_hybrid_all = np.concatenate([X_train_latent_oof, X_train_today_all], axis=1)
-        else:
-            # Load mode: tính OOF từ Transformer đã load (không có X_train_latent_oof)
-            X_train_latent_all = feature_extractor.predict(X_train_i, verbose=0)
-            X_train_today_all  = X_train_i[:, -1, :]
-            X_train_hybrid_all = np.concatenate([X_train_latent_all, X_train_today_all], axis=1)
-            print("  [INFO] Load mode: dùng main Transformer latent (không OOF)")
-
-        print(f"🌳 [TRAIN] XGBoost hybrid ({X_train_hybrid_all.shape[1]}-dim)...")
-        xgb_model = build_xgboost_optimized(X_train_hybrid_all, y_train_i)
-
-        # ── BƯỚC 4: Evaluate ──────────────────────────────────────────
-        split_idx     = int(len(X_3D) * 0.8)
-        df_align      = df.iloc[dt.time_steps:].reset_index(drop=True)
-        test_start    = split_idx + 45
-        test_close_i  = df_align.loc[test_start:, 'close'].values[:len(X_test_i)]
-        y_test_true_i = test_close_i.reshape(-1, 1) * (1 + y_test_raw_i)
-
-        X_test_latent  = feature_extractor.predict(X_test_i, verbose=0)
-        X_test_today   = X_test_i[:, -1, :]
-        X_test_hybrid  = np.concatenate([X_test_latent, X_test_today], axis=1)
-
-        hybrid_xgb_scaled = xgb_model.predict(X_test_hybrid)
-        hybrid_xgb_return = dt.target_scaler.inverse_transform(hybrid_xgb_scaled)
-
-        # SỬA: sanity check — return > 20%/ngày là scaler sai
-        assert np.abs(hybrid_xgb_return).max() < 0.20, \
-            f"[SANITY] XGBoost return bất thường: {np.abs(hybrid_xgb_return).max():.4f} — kiểm tra target_scaler!"
-
-        hybrid_xgb_preds = test_close_i.reshape(-1, 1) * (1 + hybrid_xgb_return)
-
-        trans_pred_raw   = transformer_model.predict(X_test_i, verbose=0)
-        trans_pred_clean = get_return_output(trans_pred_raw)
-        trans_return     = dt.target_scaler.inverse_transform(trans_pred_clean)
-        trans_preds      = test_close_i.reshape(-1, 1) * (1 + trans_return)
-
-        print(f"\n📊 KẾT QUẢ — {ticker}")
-        evaluate_predictions(y_test_true_i, hybrid_xgb_preds, f"Hybrid XGBoost ({ticker})", ticker)
-        evaluate_predictions(y_test_true_i, trans_preds,      f"Transformer ({ticker})", ticker)
-
-        # ── Biểu đồ ──────────────────────────────────────────────────
-        plt.figure(figsize=(15, 7))
-        plt.plot(y_test_true_i[-100:, 2], label="Giá thực tế (T+3)", color='black', linewidth=2.5)
-        plt.plot(hybrid_xgb_preds[-100:, 2], label="Hybrid XGBoost (T+3)", color='red', linestyle='--')
-        plt.plot(trans_preds[-100:, 2],      label="Transformer (T+3)",    color='blue', linestyle='-.')
-        plt.title(f"{ticker} — 100 phiên cuối tập Test (Dự báo T+3)", fontsize=14, fontweight='bold')
-        plt.xlabel("Phiên"); plt.ylabel("Giá (VNĐ)")
-        plt.legend(); plt.grid(True, alpha=0.3)
-        os.makedirs(results_dir, exist_ok=True)
-        plt.savefig(os.path.join(results_dir, f'model_battle_result_{ticker}.png'), dpi=300)
-        plt.close()
-
-        # ── Lưu mô hình ──────────────────────────────────────────────
+        # ── Lưu mô hình & Huấn luyện XGBoost ──────────────────────────────────
         os.makedirs(models_dir, exist_ok=True)
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M")
-
-        joblib.dump(xgb_model, os.path.join(models_dir, f'xgboost_model_{ticker}_{timestamp}.pkl'))
-        joblib.dump(xgb_model, os.path.join(models_dir, f'xgboost_model_{ticker}.pkl'))
+        xgb_latest_path = os.path.join(models_dir, f'xgboost_model_{ticker}.pkl')
 
         # Chỉ lưu Transformer nếu đã train lại
         if RETRAIN_TRANSFORMER or not os.path.exists(trans_latest_path):
@@ -355,7 +368,49 @@ def main():
             joblib.dump(dt.feature_scaler, os.path.join(models_dir, f'feature_scaler_{ticker}.pkl'))
             joblib.dump(dt.target_scaler,  os.path.join(models_dir, f'target_scaler_{ticker}.pkl'))
 
-        print(f"💾 Lưu xong mô hình cho {ticker} (timestamp: {timestamp})")
+        print(f"💾 Lưu xong mô hình Transformer cho {ticker} (timestamp: {timestamp})")
+
+        # ── BƯỚC 3: Huấn luyện XGBoost Stacking ──
+        if RETRAIN_TRANSFORMER or not os.path.exists(xgb_latest_path):
+            print(f"🌳 [TRAIN] XGBoost stacking cho {ticker}...")
+            if RETRAIN_TRANSFORMER:
+                # Dùng trans_pred_train_oof từ quá trình chạy OOF
+                X_train_today = X_train_p2[:, -1, :]
+                X_train_xgb = np.concatenate([trans_pred_train_oof, X_train_today], axis=1)
+                y_train_xgb = y_train_p2
+            else:
+                # Load mode: Transformer đã được load ở đầu, tự tạo df_phase2 và predict trực tiếp (không OOF)
+                print("  [INFO] Load mode: Dùng Transformer chính để tạo đặc trưng dự đoán cho XGBoost (không OOF)...")
+                dt_p2 = DataTransformer(time_steps=LOOKBACK_WINDOW)
+                feat_scaler_path = os.path.join(models_dir, f'feature_scaler_{ticker}.pkl')
+                targ_scaler_path = os.path.join(models_dir, f'target_scaler_{ticker}.pkl')
+                if os.path.exists(feat_scaler_path):
+                    dt_p2.feature_scaler = joblib.load(feat_scaler_path)
+                if os.path.exists(targ_scaler_path):
+                    dt_p2.target_scaler = joblib.load(targ_scaler_path)
+                
+                X_scaled_p2, y_scaled_p2, y_spread_scaled_p2 = dt_p2.fit_transform_train_only(df_phase2, train_ratio=0.9)
+                X_3D_p2, y_3D_p2, y_spread_3D_p2 = dt_p2.create_sliding_windows(X_scaled_p2, y_scaled_p2, y_spread_scaled_p2)
+                X_train_p2, y_train_p2, _, _, _, _, _ = dt_p2.split_train_test_chronological(df_phase2, X_3D_p2, y_3D_p2, y_spread_3D_p2, train_ratio=0.9)
+                
+                train_mask = ~np.isnan(y_train_p2).any(axis=1)
+                X_train_p2 = X_train_p2[train_mask]
+                y_train_p2 = y_train_p2[train_mask]
+                
+                trans_pred_train_raw = transformer_model.predict(X_train_p2, verbose=0)
+                trans_pred_train = get_return_output(trans_pred_train_raw)
+                X_train_today = X_train_p2[:, -1, :]
+                X_train_xgb = np.concatenate([trans_pred_train, X_train_today], axis=1)
+                y_train_xgb = y_train_p2
+                dt = dt_p2
+                
+            xgb_model = build_xgboost_optimized(X_train_xgb, y_train_xgb)
+            joblib.dump(xgb_model, os.path.join(models_dir, f'xgboost_model_{ticker}_{timestamp}.pkl'))
+            joblib.dump(xgb_model, xgb_latest_path)
+            print(f"💾 Đã huấn luyện và lưu XGBoost cho {ticker}")
+        else:
+            print(f"♻️ [LOAD] Dùng XGBoost đã train: {xgb_latest_path}")
+            xgb_model = joblib.load(xgb_latest_path)
 
         # ── Live prediction ──────────────────────────────────────────
         print(f"\n🔮 Dự báo giá đóng cửa 3 ngày tới (T+3) — {ticker}...")
@@ -482,17 +537,15 @@ def main():
         recent_scaled = dt.feature_scaler.transform(recent_features.values)
         X_predict     = recent_scaled.reshape(1, LOOKBACK_WINDOW, len(dt.feature_cols))
 
-        # Dự báo hybrid
-        X_pred_latent  = feature_extractor.predict(X_predict, verbose=0)
-        X_pred_today   = X_predict[0, -1, :].reshape(1, -1)
-        X_pred_hybrid  = np.concatenate([X_pred_latent, X_pred_today], axis=1)
-
-        xgb_pred_scaled   = xgb_model.predict(X_pred_hybrid)
-        xgb_return_future = dt.target_scaler.inverse_transform(xgb_pred_scaled)[0]
-
+        # Dự báo Transformer thô
         trans_pred_live  = transformer_model.predict(X_predict, verbose=0)
-        trans_pred_clean = get_return_output(trans_pred_live)
-        trans_return_future = dt.target_scaler.inverse_transform(trans_pred_clean)[0]
+        trans_pred_clean = get_return_output(trans_pred_live) # shape (1, 3)
+
+        # Dự báo XGBoost Stacking
+        X_pred_today = X_predict[0, -1, :].reshape(1, -1)
+        X_pred_xgb = np.concatenate([trans_pred_clean, X_pred_today], axis=1)
+        xgb_pred_scaled = xgb_model.predict(X_pred_xgb)
+        xgb_return_future = dt.target_scaler.inverse_transform(xgb_pred_scaled)[0]
 
         last_close = float(raw_df['close'].dropna().iloc[-1])
         last_date  = raw_df.index[-1].strftime('%Y-%m-%d')
@@ -503,8 +556,7 @@ def main():
             curr_date = curr_date + pd.tseries.offsets.BDay(1)
             next_dates.append(curr_date.strftime('%Y-%m-%d'))
 
-        xgb_vals   = last_close * (1 + xgb_return_future)
-        trans_vals = last_close * (1 + trans_return_future)
+        xgb_vals = last_close * (1 + xgb_return_future)
 
         valid_raw  = raw_df_reset[['high', 'low']].dropna()
         last_atr   = valid_raw['high'].iloc[-14:].values - valid_raw['low'].iloc[-14:].values
@@ -516,8 +568,7 @@ def main():
             "Cao 🔴 [CẢNH BÁO]"
         )
 
-        xgb_lowers, xgb_uppers   = xgb_vals - 1.5 * atr_approx, xgb_vals + 1.5 * atr_approx
-        trans_lowers, trans_uppers = trans_vals - 1.5 * atr_approx, trans_vals + 1.5 * atr_approx
+        xgb_lowers, xgb_uppers = xgb_vals - 1.5 * atr_approx, xgb_vals + 1.5 * atr_approx
 
         def trend_str(val):
             pct = (val - last_close) / last_close * 100
@@ -528,15 +579,14 @@ def main():
         print("  🌳 Hybrid XGBoost (Chuỗi 3 ngày):")
         for h in range(3):
             print(f"     ➔ T+{h+1} ({next_dates[h]}): {format_vn(xgb_vals[h])} VNĐ | {trend_str(xgb_vals[h])}")
-        print("  🤖 Transformer (Chuỗi 3 ngày):")
-        for h in range(3):
-            print(f"     ➔ T+{h+1} ({next_dates[h]}): {format_vn(trans_vals[h])} VNĐ | {trend_str(trans_vals[h])}")
 
         log_prediction_to_file(
             ticker, last_date, last_close, risk_level, risk_ratio,
-            xgb_vals, xgb_lowers, xgb_uppers, trans_vals, trans_lowers, trans_uppers,
+            xgb_vals, xgb_lowers, xgb_uppers,
             usd_vnd_rate, next_dates
         )
+
+        # [Telegram] Đã loại bỏ thông báo huấn luyện tự động theo yêu cầu của user
 
         print(f"\n{'─'*55}")
 

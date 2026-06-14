@@ -16,16 +16,16 @@ from src.web.backend.db import init_db, SessionLocal, Stock, StockPrice, Predict
 from src.data_loader import get_realtime_usd_vnd_rate
 
 def parse_predictions_history(db: Session):
-    print("⏳ Đang phân tích file log 'logs/predictions_history.txt' để khôi phục lịch sử dự báo...")
-    log_path = os.path.join(ROOT_DIR, "logs", "predictions_history.txt")
+    print("⏳ Đang phân tích file log 'logs/predict_predictions_history.txt' để khôi phục lịch sử dự báo...")
+    log_path = os.path.join(ROOT_DIR, "logs", "predict_predictions_history.txt")
     if not os.path.exists(log_path):
-        print("⚠️ Không tìm thấy file predictions_history.txt, bỏ qua bước import lịch sử dự đoán.")
+        print("⚠️ Không tìm thấy file predict_predictions_history.txt, bỏ qua bước import lịch sử dự đoán.")
         return
 
     with open(log_path, "r", encoding="utf-8") as f:
         content = f.read()
 
-    blocks = content.split("=== BẢN GHI DỰ BÁO")
+    blocks = re.split(r"=== (?:BẢN GHI )?DỰ BÁO", content)
     imported_count = 0
 
     for block in blocks:

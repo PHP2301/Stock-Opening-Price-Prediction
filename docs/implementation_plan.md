@@ -1,116 +1,91 @@
-# Kế hoạch Triển khai Chính thức: Nâng cấp Toàn diện Mô hình Dự báo giá mở cửa
+# Kế hoạch Triển khai Tổng hợp: Hệ thống Dự báo Giá mở cửa & Multi-Agent
 
-Tài liệu này là đặc tả kỹ thuật chi tiết nhất đã được thống nhất để triển khai bộ 34 đặc trưng High-Alpha, cấu trúc Transformer phân nhánh, cơ chế Time-Decay Self-Attention, hàm Loss trọng số không xác định (Kendall 2018), và quy trình kiểm thử Walk-Forward Validation nghiêm ngặt.
-
----
-
-## 📋 Các thành phần nâng cấp chi tiết
-
-### PHA 1: Khử Rò Rỉ Dữ Liệu & Đồng Bộ Múi Giờ
-1. **Đồng bộ múi giờ NYSE vs HOSE (Cho mã Việt Nam `VNM.VN`)**:
-   * Toàn bộ dữ liệu vĩ mô đóng cửa phiên Mỹ ngày $T$ (`vix`, `bond_yield_10y`, `dollar_index_change`, tỷ suất S&P 500 qua đêm) sẽ được **dịch trễ 1 ngày (shift 1)**.
-   * Đảm bảo tại thời điểm chạy mô hình sau Close ngày $T$, chúng ta chỉ dùng dữ liệu phiên Mỹ đã đóng cửa lúc 04:00 ICT sáng ngày $T$ (tức phiên Mỹ $T-1$).
-   * Đối với mã Mỹ (`GOOGL`/`META`), chạy cùng múi giờ nên giữ nguyên, không shift trễ.
-2. **Khử rò rỉ mẫu số giá đóng cửa**:
-   * Đặc trưng được tính toán **sau Close T** để đặt lệnh khớp ở **Open T+1**.
-   * Mọi đặc trưng sử dụng Close(t) làm mẫu số đều hợp lệ vì Close(t) đã xác định tại thời điểm tính toán sau Close phiên ngày T.
-   * Loại bỏ hoàn toàn `close_lag1_ratio = Close(t-1) / Close(t)` và `open_lag1_ratio = Open(t-1) / Close(t)` để tránh gây nhầm lẫn phi tĩnh.
-   * Thay thế bằng tỷ suất sinh lời stationary:
-     * `return_1d = Close(t-1) / Close(t-2) - 1`
-     * `return_2d = Close(t-2) / Close(t-3) - 1`
-     * `return_3d = Close(t-3) / Close(t-4) - 1`
-     * `open_return = Open(t) / Open(t-1) - 1` (Gap qua đêm thực sự).
+Tài liệu này tổng hợp toàn bộ các kết quả thực tế của hệ thống, dọn dẹp các mục đã hoàn thành, chỉ ra các lỗ hổng cần làm sạch, và đề xuất lộ trình chi tiết để tiếp tục thực hiện.
 
 ---
 
-## PHA 2: Thiết kế Hệ thống 34 Đặc trưng & Phân nhánh Đầu vào
+## 🏆 ĐÁNH GIÁ TRẠNG THÁI THỰC TẾ & KẾT QUẢ ĐÃ ĐẠT ĐƯỢC
 
-34 đặc trưng cơ bản (28 phi thời gian + 6 lịch) được phân chia vào 3 nhánh đầu vào độc lập:
+Sau khi kiểm tra toàn bộ mã nguồn hiện tại, dưới đây là tình trạng thực tế của các mục tiêu:
 
-#### Nhánh 1 — Giá & Động lượng (12 Đặc trưng)
-1. `gap_open`: `Open(t) / Close(t-1) - 1` (Gap mở cửa qua đêm)
-2. `open_return`: `Open(t) / Open(t-1) - 1` (Thay thế cho close_lag5_ratio bị trùng)
-3. `buying_pressure`: `(Close(t) - Low(t)) / (High(t) - Low(t) + 1e-9)` (Áp lực mua cuối phiên ∈ [0, 1])
-4. `shadow_ratio`: `(High(t) - Close(t)) / (Close(t) - Low(t) + 1e-9)` (Bóng nến trên/dưới)
-5. `intraday_range`: `(High(t) - Low(t)) / Close(t)` (Biên độ dao động trong ngày)
-6. `return_1d`: `Close(t-1) / Close(t-2) - 1`
-7. `return_2d`: `Close(t-2) / Close(t-3) - 1`
-8. `return_3d`: `Close(t-3) / Close(t-4) - 1`
-9. `mom_5d`: `Close(t) / Close(t-5) - 1` (Xu hướng 1 tuần)
-10. `mom_10d`: `Close(t) / Close(t-10) - 1` (Xu hướng 2 tuần)
-11. `mom_20d`: `Close(t) / Close(t-20) - 1` (Xu hướng 1 tháng)
-12. `dist_ma50`: `Close(t) / Mean(Close[t-49:t]) - 1` (MA50 tính inclusive Close(t))
+### 1. Dữ liệu & Đặc trưng (Feature Engineering) — [HOÀN THÀNH]
+- **Tích hợp 42 đặc trưng High-Alpha**: Đã tích hợp thành công các chỉ báo nâng cao (`mfi_14`, các chỉ báo đếm ngày sự kiện cổ tức `dividend_flag`, `days_to_dividend`, `days_after_dividend` lấy từ yfinance thực tế qua `dividend_fetcher.py`, và các proxy dòng tiền ngoại/tự doanh).
+- **Khử rò rỉ dữ liệu**: Đồng bộ múi giờ Mỹ-Việt (dịch chuyển `shift(1)` đối với dữ liệu vĩ mô Mỹ cho mã Việt Nam) và loại bỏ hoàn toàn các tỷ lệ giá tương lai phi tĩnh khỏi tập đặc trưng đầu vào.
 
-#### Nhánh 2 — Khối lượng & Biến động (6 Đặc trưng)
-13. `volume_change`: `Volume(t) / Volume(t-1) - 1` (Thay đổi khối lượng 1 ngày)
-14. `volume_sma_ratio`: `Volume(t) / Mean(Volume[t-19:t])` (Khối lượng so với trung bình 20 ngày)
-15. `volume_zscore`: `(Volume(t) - Mean_Vol_20) / (Std_Vol_20 + 1e-9)` (Đột biến dòng tiền)
-16. `ad_line_ratio`: `((Close - Low) - (High - Close)) / (High - Low + 1e-9)` (Tích lũy/phân phối chuẩn hóa về [-1, 1], không nhân hay chia Volume nhằm tránh triệt tiêu toán học)
-17. `obv_zscore`: Đặc trưng dòng tiền chuẩn hóa (Z-score 20 phiên của hiệu số OBV 5 phiên):
-    $$\text{delta\_obv} = \text{OBV}(t) - \text{OBV}(t-5)$$
-    $$\text{std\_20} = \text{rolling\_std}(\text{delta\_obv}, \text{window}=20)$$
-    $$\text{obv\_zscore} = \frac{\text{delta\_obv}}{\text{std\_20} + 1e-9}$$
-18. `vol_ratio`: `volatility_5d / (volatility_60d + 1e-9)` (Bùng nổ biến động)
+### 2. Loại bỏ XGBoost khỏi Hệ thống — [HOÀN THÀNH MỘT PHẦN]
+- **Huấn luyện & Dự báo**: Đã loại bỏ hoàn toàn XGBoost khỏi `run_training.py` và `predict.py`, sử dụng Transformer thuần túy làm mô hình cốt lõi duy nhất.
+- **Lỗ hổng (Cần sửa đổi)**: Hai tệp kiểm thử lịch sử `run_backtest.py` và `run_walk_forward_backtest.py` vẫn gọi và yêu cầu mô hình XGBoost theo mặc định.
+  - *Giải pháp*: Cấu hình trực tiếp biến mặc định `trans_only = True` trong code của cả 2 file. Xóa/comment đoạn tải tệp mô hình XGBoost (`xgb_path` và `joblib.load`) để tránh các cảnh báo lỗi không đáng có, thay vào đó gán cứng `xgb_model = None`.
 
-#### Nhánh 3 — Kỹ thuật, Vĩ mô & Lịch (16 Đặc trưng)
-19. `rsi_14`: Chỉ số RSI 14 ngày
-20. `macd_ratio`: `MACD / (Signal + 1e-9)`
-21. `bb_position`: `(Close - LowerBand) / (UpperBand - LowerBand + 1e-9)` (Vị thế trong dải Bollinger ∈ [0, 1])
-22. `adx_14`: Average Directional Index 14 ngày
-23. `stoch_k`: Stochastic %K
-24. `efficiency_ratio`: `abs(Close(t) - Close(t-10)) / (Sum(abs(daily_changes_10d)) + 1e-9)` (Tránh chia cho 0 khi đi ngang)
-25. `vix_lag1`: VIX shift 1 (đối với VN) hoặc VIX ngày hiện tại (đối với Mỹ)
-26. `bond_yield_lag1`: US 10Y Treasury yield dịch trễ 1 ngày
-27. `usdvnd_change`: `USDVND(t) / USDVND(t-1) - 1`
-28. `vnindex_return_lag1`: Tỷ suất VNINDEX (VN) hoặc NASDAQ (Mỹ) dịch trễ 1 ngày
-29. `day_of_week_sin`: `sin(2π * DOW / 5)` (Tránh discontinuity)
-30. `day_of_week_cos`: `cos(2π * DOW / 5)`
-31. `month_sin`: `sin(2π * Month / 12)`
-32. `month_cos`: `cos(2π * Month / 12)`
-33. `is_quarter_end`: `1` nếu thuộc 3 ngày giao dịch cuối quý, ngược lại là `0`
-34. `days_before_tet`: `min(số phiên giao dịch còn lại đến Tết, 30)` (Cap tại 30 phiên, reset về 30 ngay sau Tết, chỉ áp dụng cho VN)
+### 3. Hệ thống Multi-Agent & Backtesting — [HOÀN THÀNH MỘT PHẦN]
+- **Backtesting**: Đã bổ sung các hệ số Sharpe, Max Drawdown, Calmar và vẽ biểu đồ Equity Curve kết hợp hệ số trượt giá động (Dynamic Slippage).
+- **Kiến trúc Multi-Agent**: Xây dựng thành công các Agent (Technical, Sentiment, Macro, Risk) và Orchestrator điều phối tranh luận Bull vs Bear.
+- **Lỗ hổng (Cần sửa đổi)**: Thuật toán quản lý vị thế động Kelly Criterion hiện đang được viết trực tiếp tại `scripts/predict.py` chứ chưa được đưa vào `RiskAgent`.
+  - *Giải pháp*: Chuyển toàn bộ logic tính toán Kelly Criterion thành một phương thức chuyên biệt trong `src/agents/risk_agent.py`.
+  - *Định nghĩa xác suất thắng $p$*: Để tránh việc AI Agent bị quá tự tin (overconfident), chúng tôi đề xuất tính toán $p$ an toàn bằng cách lấy giá trị nhỏ nhất giữa điểm số tự tin (`confidence_score`) của Orchestrator và tỷ lệ thắng lịch sử (`win_rate_history`):
+    $$p = \min(\text{confidence\_score}, \text{win\_rate\_history})$$
+    - Trong backtest: `win_rate_history` được tính toán động dựa trên tỷ lệ thắng của tối đa 20 lệnh gần nhất trong danh sách mô phỏng giao dịch.
+    - Trong dự báo thời gian thực (`predict.py`): `win_rate_history` sẽ được đọc từ kết quả lưu của file cấu hình hiệu suất backtest (`config/performance_metrics_{ticker}.json`). Nếu không tìm thấy, hệ thống sẽ sử dụng giá trị mặc định an toàn là **0.50** (50%).
+
+### 4. Thông báo & Cảnh báo Telegram — [HOÀN THÀNH MỘT PHẦN]
+- **Tình trạng hiện tại**: Đã cấu hình Telegram Bot gửi báo cáo HTML dự báo 3 ngày và khuyến nghị Multi-Agent.
+- **Lỗ hổng (Cần sửa đổi)**: Logic cảnh báo biến động mạnh (khi tỷ lệ rủi ro ATR $\ge 3\%$ hoặc dự báo thay đổi $\ge 3\%$) đã được viết, nhưng do ngưỡng này khá cao nên ở điều kiện thị trường bình thường, người dùng chỉ nhận được thông báo 3 ngày thông thường mà không thấy tiêu đề cảnh báo.
+  - *Giải pháp*: Bổ sung log chi tiết in ra console thông số kiểm tra biến động thực tế (ATR %, Forecast %) so với ngưỡng để người dùng dễ theo dõi, đồng thời cung cấp tùy chọn điều chỉnh hoặc kiểm thử tính năng này.
 
 ---
 
-### PHA 3: Kiến trúc Transformer Phân Nhánh & Học đa nhiệm
-1. **Time-Decay Attention**:
-   * Tính ma trận khoảng cách giữa các phiên $|i - j|$ trong chuỗi 45 ngày.
-   * `Penalty = -exp(log_gamma) * |i - j|` với `log_gamma` là một trainable weight riêng cho từng head attention của mỗi nhánh.
-2. **Cơ chế Phân nhánh**:
-   * Đầu vào `(N, 45, 34)` tách thành 3 nhánh tương ứng qua Conv1D + TimeDecayAttention để tạo ra:
-     * `latent_price` (16 chiều)
-     * `latent_volume` (8 chiều)
-     * `latent_tech` (8 chiều)
-   * `Concatenate` thành vector **32 chiều** làm Bottleneck representation.
-3. **Định nghĩa Học đa nhiệm & Trọng số không xác định (Kendall 2018)**:
-   * **Task 1 (Chính)**: Dự báo liên tục tỷ suất sinh lời mở cửa ngày mai `target_return = Open(T+1) / Close(T) - 1`.
-   * **Task 2 (Phụ)**: Dự báo chênh lệch dao động giá ngày mai `target_spread = (High(T+1) - Low(T+1)) / Close(T)`.
-   * Chuẩn hóa nhãn target trước khi tính Loss:
-     $$\text{return\_normalized} = \frac{\text{Return} - \mu_{\text{return}}}{\sigma_{\text{return}}}$$
-     $$\text{spread\_normalized} = \frac{\text{Spread} - \mu_{\text{spread}}}{\sigma_{\text{spread}}}$$
-   * **Uncertainty Weighting (Kendall 2018)**: Sử dụng các tham số học tập $\sigma_1, \sigma_2$ để tự động cân bằng tỷ lệ gradient:
-     $$\text{Loss}_{\text{total}} = \frac{1}{2\sigma_1^2} \text{HuberLoss}(\text{return\_norm}) + \text{HuberLoss}(\text{spread\_norm}) + \log(\sigma_1) + \log(\sigma_2)$$
+## 🚀 LỘ TRÌNH CHI TIẾT THỰC HIỆN TIẾP THEO
+
+### ✅ Bước 1: Hoàn thiện Optuna Hyperparameter Tuning cho Transformer thuần [HOÀN THÀNH]
+- **Mục tiêu**: Tối ưu hóa cấu hình mạng Transformer (gồm cả biến `key_dim`) để đạt sai số tốt nhất.
+- **Proposed Changes**:
+  - **`scripts/run_tuning.py`**:
+    - Thêm biến `key_dim` (8, 16, 32) vào không gian tìm kiếm hyperparameter của Optuna trong hàm `objective(trial)`.
+    - Đảm bảo `build_transformer` được gọi truyền đúng tham số `key_dim`.
+    - Ghi nhận và lưu tham số `key_dim` tối ưu vào file cấu hình JSON (`best_transformer_params_{ticker}.json`).
+  - **`scripts/run_training.py`**:
+    - Đọc tham số `key_dim` từ file JSON tối ưu và truyền vào `build_transformer` trong cả hai pha huấn luyện (Phase 1 & Phase 2).
+
+### ✅ Bước 2: Module hóa Kelly Criterion, Dọn dẹp Backtest & Cấu hình Cảnh báo Volatility động [HOÀN THÀNH]
+- **Mục tiêu**: Tổ chức lại mã nguồn Agent sạch sẽ, chuyển các file backtest sang chạy Transformer thuần mặc định, và cấu hình ngưỡng cảnh báo động theo ticker.
+- **Proposed Changes**:
+  - **`src/agents/risk_agent.py`**:
+    - Định nghĩa phương thức `calculate_position_size(self, confidence_score: float, win_rate_history: float, close_price: float, stop_loss: float, take_profit: float) -> dict` thực thi công thức Kelly Criterion rút gọn, áp dụng Half-Kelly và Hard Cap 25% phân bổ vốn với:
+      $$p = \min(\text{confidence\_score}, \text{win\_rate\_history})$$
+  - **`scripts/predict.py`**:
+    - Gọi phương thức Kelly từ `RiskAgent`. Tự động tải `win_rate_history` từ `config/performance_metrics_{ticker}.json` (mặc định 0.50 nếu thiếu).
+    - Triển khai ngưỡng cảnh báo biến động động theo từng mã (ticker-specific):
+      ```python
+      ALERT_THRESHOLD = {
+          'VNM.VN': 0.03,   # 3.0%
+          'GOOGL':  0.025,  # 2.5%
+          'META':   0.025,  # 2.5%
+      }
+      ```
+    - Thêm log in ra console thông tin debug chi tiết: `🔍 [Telegram] Kiểm tra biến động mạnh cho {ticker}: ATR = X.XX% (ngưỡng Z%), Dự báo thay đổi lớn nhất = Y.YY% (ngưỡng Z%).` để dễ theo dõi và xác nhận logic chạy bình thường.
+  - **`scripts/run_backtest.py` & `scripts/run_walk_forward_backtest.py`**:
+    - Thiết lập giá trị mặc định `trans_only = True` ngay trong code.
+    - Xóa/comment phần load mô hình XGBoost (`xgb_path` và `joblib.load`) để tránh cảnh báo lỗi không tìm thấy file, gán thẳng `xgb_model = None`.
+    - Sau khi hoàn thành backtest, tự động lưu tỷ lệ thắng tổng thể (overall win rate) của chiến lược vào file `config/performance_metrics_{ticker}.json` để `predict.py` làm cơ sở tham chiếu.
+
+### ✅ Bước 3: Phát triển Web App Dashboard trực quan [HOÀN THÀNH]
+- **Mục tiêu**: Hiển thị trực quan hóa kết quả dự đoán, lịch sử kiểm thử và nhật ký tranh luận Agent.
+- **Proposed Changes**:
+  - Hoàn thiện giao diện HTML/CSS/JS tại thư mục `src/web` để hiển thị biểu đồ so sánh dự báo 3 ngày vs thực tế, bảng tin tức kèm điểm cảm xúc, và hộp hội thoại tranh luận Agent (Dark/Light mode cao cấp).
+
+### ✅ Bước 4: Tích hợp Bộ cào tin tức tiếng Việt dạng RSS hợp lệ (CafeF RSS) [HOÀN THÀNH]
+- **Mục tiêu**: Thu thập tin tức tiếng Việt real-time một cách an toàn, tuân thủ điều khoản dịch vụ (ToS) của CafeF để cập nhật cảm xúc cho `VNM.VN`.
+- **Proposed Changes**:
+  - Thay vì cào trực tiếp trang web CafeF bằng BeautifulSoup có nguy cơ vi phạm ToS, module sẽ sử dụng nguồn **RSS Feed chính thức của CafeF**: `https://cafef.vn/rss/chung-khoan.rss` (Lựa chọn B).
+  - Đối với các mã chứng khoán Mỹ (GOOGL, META), sử dụng nguồn RSS miễn phí của **Google News**: `https://news.google.com/rss/search?q={ticker}` (Lựa chọn C) để thu thập tin tức một cách hợp lệ và an toàn.
+  - Lọc tin tức theo từ khóa ticker chính xác để loại bỏ nhiễu và phân tích điểm cảm xúc tích hợp vào `SentimentAgent`.
 
 ---
 
-### PHA 4: Walk-Forward Validation & Chi Phí Thực Tế
-1. **Walk-Forward với Purge Gap 45 PHIÊN GIAO DỊCH (Trading Days)**:
-   * Để triệt tiêu rò rỉ dữ liệu qua chuỗi overlap do cửa sổ trượt 45 phiên gây ra, Purge Gap được xác định chuẩn xác theo **số phiên giao dịch thực tế** trên thị trường (chỉ mục dòng của DataFrame lịch sử đã lọc ngày nghỉ/lễ) chứ không cộng theo ngày lịch.
-   * Công thức chia Folds sử dụng chỉ mục DataFrame:
-     * **Fold 1**: Train `[Idx_start, Idx_train_end]` | Purge Gap (Bỏ) `[Idx_train_end + 1, Idx_train_end + 45]` | Test `[Idx_train_end + 46, Idx_test_end]`
-2. **Chi phí giao dịch & Dynamic Slippage**:
-   * Chi phí cơ sở:
-     * **VNM.VN (Bluechip)**: Phí sàn 0.15% + Slippage 0.10% + Market impact 0.05% = 0.30% một chiều (0.60% khứ hồi).
-     * **Mã VN thanh khoản thấp**: Phí sàn 0.15% + Slippage 0.40%–0.80% + Market impact 0.10% = 0.65%–1.05% một chiều.
-     * **Mã Mỹ (GOOGL/META)**: Phí sàn 0.05% + Slippage 0.02% = 0.07% một chiều (0.14% khứ hồi).
-   * **Dynamic Slippage**: Trong backtest, nếu `volume_zscore < -1` (khối lượng thấp bất thường), nhân hệ số slippage lên **1.5× – 2.0×**.
+## 🙋‍♂️ YÊU CẦU XÁC NHẬN TỪ NGƯỜI DÙNG (USER REVIEW REQUIRED)
 
----
-
-## Danh sách tệp tin thay đổi:
-
-*   **`src/features.py`**: Tích hợp 34 đặc trưng cơ bản mới và xử lý chuẩn hóa chống rò rỉ dữ liệu, epsilon guard.
-*   **`src/data_loader.py`**: Xử lý dịch trễ vĩ mô Mỹ cho mã VN và tính toán Tết Bounded, Quarter End.
-*   **`src/ai_models.py`**: Xây dựng lớp `TimeDecayAttention` và kiến trúc Transformer phân 3 nhánh đầu vào.
-*   **`src/web/backend/api.py`**: Điều chỉnh tính toán đặc trưng thời gian thực cho 34 đặc trưng đầu vào mới.
-*   **`scripts/run_training.py`** & **`scripts/run_backtest.py`**: Tích hợp chia tập Walk-forward với Purge Gap 45 ngày và Backtest tính dynamic slippage.
+> [!IMPORTANT]
+> Vui lòng xác nhận các điểm sau để chúng tôi tiến hành thực hiện:
+> 1. **Dọn dẹp Backtest**: Bạn đã đồng ý với giải pháp đổi default `trans_only = True` và gán cứng `xgb_model = None`.
+> 2. **Kiến trúc Kelly & Xác suất $p$**: Bạn đã đồng ý với phương án sử dụng $p = \min(\text{confidence\_score}, \text{win\_rate\_history})$ và lưu/tải `win_rate_history` qua file cấu hình `performance_metrics_{ticker}.json`.
+> 3. **Cấu hình biến động & Tin tức**: Bạn đã đồng ý cấu hình ngưỡng cảnh báo biến động động theo ticker (`ALERT_THRESHOLD`), bổ sung debug log lên console của `predict.py`, và sử dụng nguồn **RSS Feed (CafeF & Google News)** để cào tin tức an toàn hợp lệ (không vi phạm ToS).

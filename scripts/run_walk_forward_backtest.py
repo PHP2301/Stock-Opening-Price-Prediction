@@ -224,7 +224,7 @@ def main():
 
     # Parse arguments
     args_cleaned = [arg for arg in sys.argv if not arg.startswith("--")]
-    trans_only   = "--trans-only" in sys.argv
+    trans_only   = not ("--xgb-hybrid" in sys.argv)
 
     if len(args_cleaned) > 1:
         arg = args_cleaned[1].upper()
@@ -491,6 +491,24 @@ def main():
         plt.savefig(plot_path, dpi=300)
         plt.close()
         print(f"💾 Đã lưu biểu đồ tại: {plot_path}")
+
+        # Lưu hiệu suất backtest vào JSON
+        config_dir = os.path.join(ROOT_DIR, 'config')
+        os.makedirs(config_dir, exist_ok=True)
+        perf_path = os.path.join(config_dir, f'performance_metrics_{ticker}.json')
+        perf_data = {
+            'overall_win_rate': win_rate / 100.0,
+            'total_trades': total_trades,
+            'profit_factor': profit_factor,
+            'strat_return': metrics['strat_return'],
+            'bh_return': metrics['bh_return'],
+            'sharpe': metrics['sharpe'],
+            'max_drawdown': metrics['mdd'],
+            'timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+        with open(perf_path, 'w', encoding='utf-8') as f:
+            json.dump(perf_data, f, indent=4)
+        print(f"💾 Đã lưu hiệu suất backtest vào: {perf_path}")
 
 
 if __name__ == "__main__":
