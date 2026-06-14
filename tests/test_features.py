@@ -32,14 +32,18 @@ class TestFeatures(unittest.TestCase):
         })
         
         # Thêm các cột mục tiêu
-        self.df["target_return"] = self.df["open"].shift(-1) / self.df["close"] - 1.0
-        self.df["target_spread"] = (self.df["high"].shift(-1) - self.df["low"].shift(-1)) / self.df["close"]
+        for h in [1, 2, 3]:
+            self.df[f"target_return_{h}d"] = self.df["open"].shift(-h) / self.df["close"] - 1.0
+            self.df[f"target_spread_{h}d"] = (self.df["high"].shift(-h) - self.df["low"].shift(-h)) / self.df["close"]
         self.df["days_before_tet"] = 30
         self.df["is_quarter_end"] = 0
         self.df["day_of_week_sin"] = 0.5
         self.df["day_of_week_cos"] = 0.5
         self.df["month_sin"] = 0.5
         self.df["month_cos"] = 0.5
+        self.df["dividend_flag"] = 0.0
+        self.df["days_to_dividend"] = 60.0
+        self.df["days_after_dividend"] = 60.0
         
         # Điền các đặc trưng thô khác cần thiết cho transform_df nếu có
         # Ở đây ta sẽ giả định dữ liệu đã đi qua data_loader và chứa các đặc trưng thô
@@ -54,16 +58,16 @@ class TestFeatures(unittest.TestCase):
 
     def test_sliding_windows(self):
         """Kiểm tra việc chuyển đổi cấu trúc 3D sliding window"""
-        X_dummy = np.random.randn(50, 34)
-        y_dummy = np.random.randn(50, 1)
-        ys_dummy = np.random.randn(50, 1)
+        X_dummy = np.random.randn(50, 42)
+        y_dummy = np.random.randn(50, 3)
+        ys_dummy = np.random.randn(50, 3)
         
         X_3d, y_3d, ys_3d = self.transformer.create_sliding_windows(X_dummy, y_dummy, ys_dummy)
         
         expected_n = 50 - self.transformer.time_steps
-        self.assertEqual(X_3d.shape, (expected_n, self.transformer.time_steps, 34))
-        self.assertEqual(y_3d.shape, (expected_n, 1))
-        self.assertEqual(ys_3d.shape, (expected_n, 1))
+        self.assertEqual(X_3d.shape, (expected_n, self.transformer.time_steps, 42))
+        self.assertEqual(y_3d.shape, (expected_n, 3))
+        self.assertEqual(ys_3d.shape, (expected_n, 3))
 
     def test_fit_transform_train_only(self):
         """Kiểm tra việc chuẩn hóa chỉ dùng phân phối của tập Train (không Leak)"""
@@ -74,8 +78,8 @@ class TestFeatures(unittest.TestCase):
         # Verify shapes are correct
         n_samples = len(df_clean)
         self.assertEqual(X_scaled.shape, (n_samples, len(self.transformer.feature_cols)))
-        self.assertEqual(y_scaled.shape, (n_samples, 1))
-        self.assertEqual(y_spread_scaled.shape, (n_samples, 1))
+        self.assertEqual(y_scaled.shape, (n_samples, 3))
+        self.assertEqual(y_spread_scaled.shape, (n_samples, 3))
 
 if __name__ == '__main__':
     unittest.main()

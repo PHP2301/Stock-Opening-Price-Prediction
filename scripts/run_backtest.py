@@ -46,11 +46,47 @@ def compute_metrics(equity, bh_equity, dates):
     bh_peaks = np.maximum.accumulate(bh_equity)
     bh_mdd   = np.min((bh_equity - bh_peaks) / bh_peaks) * 100
 
+    calmar = (
+        (total_strat_ret / abs(mdd))
+        if abs(mdd) > 1e-8
+        else 0.0
+    )
+
     return dict(
         strat_return=total_strat_ret,
         bh_return=total_bh_ret,
         sharpe=sharpe, mdd=mdd, bh_mdd=bh_mdd,
+        calmar=calmar,
     )
+
+
+def compute_trade_metrics(trades, commission_pct):
+    buy_trades  = [t for t in trades if t["type"] == "BUY"]
+    sell_trades = [t for t in trades if t["type"] == "SELL"]
+    total = min(len(buy_trades), len(sell_trades))
+    if total == 0:
+        return 0.0, 0, 1.0
+
+    win = 0
+    total_profits = 0.0
+    total_losses = 0.0
+    for b, s in zip(buy_trades[:total], sell_trades[:total]):
+        # tính đủ commission cả 2 chiều
+        buy_cost = b['price'] * b['shares'] * (1 + commission_pct)
+        pnl = s['cash'] - buy_cost
+        if pnl > 0:
+            win += 1
+            total_profits += pnl
+        else:
+            total_losses += abs(pnl)
+
+    profit_factor = (
+        total_profits / total_losses
+        if total_losses > 1e-8
+        else (999.0 if total_profits > 0 else 1.0)
+    )
+    win_rate = win / total * 100
+    return win_rate, total, profit_factor
 
 
 def run_simulation(
@@ -73,14 +109,14 @@ def run_simulation(
         X_test_today  = X_test[:, -1, :]
         X_test_hybrid = np.concatenate([X_test_latent, X_test_today], axis=1)
 
-        xgb_pred_scaled = xgb_model.predict(X_test_hybrid).reshape(-1, 1)
-        xgb_returns     = dt.target_scaler.inverse_transform(xgb_pred_scaled).ravel()
+        xgb_pred_scaled = xgb_model.predict(X_test_hybrid)
+        xgb_returns     = dt.target_scaler.inverse_transform(xgb_pred_scaled)
     else:
         print("   [PREDICT] Đang chạy dự báo trên tập test (chỉ dùng Transformer)...")
 
     trans_pred_raw   = transformer_model.predict(X_test, verbose=0)
     trans_pred_clean = get_return_output(trans_pred_raw)
-    trans_returns    = dt.target_scaler.inverse_transform(trans_pred_clean).ravel()
+    trans_returns    = dt.target_scaler.inverse_transform(trans_pred_clean)
 
     # Sanity check
     if xgb_returns is not None:
@@ -92,17 +128,17 @@ def run_simulation(
     # Debug correlation — phát hiện signal inversion
     actual_returns = np.diff(df_test['close'].values[:len(X_test)]) \
                      / (df_test['close'].values[:len(X_test) - 1] + 1e-9)
-    corr_trans = np.corrcoef(trans_returns[:-1], actual_returns)[0, 1]
+    corr_trans = np.corrcoef(trans_returns[:-1, 0], actual_returns)[0, 1]
     if xgb_returns is not None:
-        corr_xgb   = np.corrcoef(xgb_returns[:-1],  actual_returns)[0, 1]
-        print(f"   [DEBUG] Corr XGB-Actual={corr_xgb:+.4f} | "
-              f"Corr Trans-Actual={corr_trans:+.4f}")
-        print(f"   [DEBUG] XGB mean={xgb_returns.mean():.5f} | "
-              f"Trans mean={trans_returns.mean():.5f} | "
+        corr_xgb   = np.corrcoef(xgb_returns[:-1, 0],  actual_returns)[0, 1]
+        print(f"   [DEBUG] Corr XGB-Actual (T+1)={corr_xgb:+.4f} | "
+              f"Corr Trans-Actual (T+1)={corr_trans:+.4f}")
+        print(f"   [DEBUG] XGB mean (T+1)={xgb_returns[:, 0].mean():.5f} | "
+              f"Trans mean (T+1)={trans_returns[:, 0].mean():.5f} | "
               f"Actual mean={actual_returns.mean():.5f}")
     else:
-        print(f"   [DEBUG] Corr Trans-Actual={corr_trans:+.4f}")
-        print(f"   [DEBUG] Trans mean={trans_returns.mean():.5f} | "
+        print(f"   [DEBUG] Corr Trans-Actual (T+1)={corr_trans:+.4f}")
+        print(f"   [DEBUG] Trans mean (T+1)={trans_returns[:, 0].mean():.5f} | "
               f"Actual mean={actual_returns.mean():.5f}")
 
     close_today = df_test['close'].values[:len(X_test)]
@@ -116,6 +152,10 @@ def run_simulation(
     vol_mean   = pd.Series(vol_series).rolling(20, min_periods=1).mean().values
     vol_std    = pd.Series(vol_series).rolling(20, min_periods=1).std().fillna(1.0).values
     vol_zscore = (vol_series - vol_mean) / (vol_std + 1e-9)
+
+    # Lợi nhuận thực tế lịch sử phục vụ tính toán dải Mean Reversion
+    hist_returns = df_test['close'].pct_change().fillna(0.0).values
+    rolling_std  = pd.Series(hist_returns).rolling(20, min_periods=1).std().fillna(0.02).values
 
     initial_capital = 100_000_000.0
     cash     = initial_capital
@@ -131,19 +171,29 @@ def run_simulation(
     buy_index = -1
     HOLD_DAYS = 3
 
+    max_equity_peak = initial_capital
+    portfolio_stop_loss_triggered = False
+
     for i in range(len(X_test) - 1):
-        r_trans = trans_returns[i]
-
-        sig_trans = ("Up"   if r_trans > threshold_buy  else
-                     "Down" if r_trans < threshold_sell else "Neutral")
-
+        # Tạo dự báo đồng thuận (ensemble) nếu có cả 2 mô hình
         if xgb_returns is not None:
-            r_xgb   = xgb_returns[i]
-            sig_xgb   = ("Up"   if r_xgb   > threshold_buy  else
-                         "Down" if r_xgb   < threshold_sell else "Neutral")
-            is_buy = (sig_xgb == "Up" and sig_trans == "Up")
+            r_1 = 0.5 * trans_returns[i, 0] + 0.5 * xgb_returns[i, 0]
+            r_2 = 0.5 * trans_returns[i, 1] + 0.5 * xgb_returns[i, 1]
+            r_3 = 0.5 * trans_returns[i, 2] + 0.5 * xgb_returns[i, 2]
         else:
-            is_buy = (sig_trans == "Up")
+            r_1, r_2, r_3 = trans_returns[i, 0], trans_returns[i, 1], trans_returns[i, 2]
+
+        sigma = rolling_std[i]
+
+        # Tín hiệu Momentum: Dự báo tăng liên tục trong 3 ngày và ngày T+1 vượt ngưỡng mua
+        is_momentum = (r_3 > r_2) and (r_2 > r_1) and (r_1 > threshold_buy)
+        # Tín hiệu Mean Reversion: Dự báo ngày T+1 bị giảm cực mạnh, có khả năng bật tăng trở lại
+        is_mean_rev  = (r_1 < -1.5 * sigma)
+
+        is_buy = is_momentum or is_mean_rev
+
+        if portfolio_stop_loss_triggered:
+            is_buy = False
 
         cur_slip   = slippage_pct * 2.0 if vol_zscore[i] < -1.0 else slippage_pct
         buy_price  = df_test['open'].values[i] * (1 + cur_slip)
@@ -177,6 +227,27 @@ def run_simulation(
             cash if position == 0
             else shares * df_test['close'].values[i] * (1 - cur_slip) * (1 - commission_pct)
         )
+
+        # Giám sát portfolio stop-loss (-20% MDD)
+        if cur_equity > max_equity_peak:
+            max_equity_peak = cur_equity
+            
+        drawdown = (cur_equity - max_equity_peak) / max_equity_peak
+        if drawdown <= -0.20 and not portfolio_stop_loss_triggered:
+            portfolio_stop_loss_triggered = True
+            print(f"      🚨 [PORTFOLIO STOP-LOSS] Drawdown chạm {drawdown*100:.2f}% vào ngày {date_str(dates[i])} (Đỉnh: {max_equity_peak:,.2f} VNĐ, Hiện tại: {cur_equity:,.2f} VNĐ). Kích hoạt dừng lỗ toàn bộ danh mục và ngưng giao dịch.")
+            if position == 1:
+                cash     = shares * sell_price * (1 - commission_pct)
+                shares   = 0.0
+                position = 0
+                buy_index = -1
+                trades.append(dict(
+                    date=date_str(dates[i]), type="SELL",
+                    price=sell_price, cash=cash,
+                    note="PORTFOLIO_STOP_LOSS"
+                ))
+                cur_equity = cash
+
         equity.append(cur_equity)
         bh_equity.append(bh_shares * df_test['close'].values[i])
 
@@ -190,23 +261,6 @@ def run_simulation(
         ))
 
     return dates, equity, bh_equity, trades
-
-
-def compute_win_rate(trades, commission_pct):
-    buy_trades  = [t for t in trades if t["type"] == "BUY"]
-    sell_trades = [t for t in trades if t["type"] == "SELL"]
-    total = min(len(buy_trades), len(sell_trades))
-    if total == 0:
-        return 0.0, 0
-
-    win = 0
-    for b, s in zip(buy_trades[:total], sell_trades[:total]):
-        # FIX: tính đủ commission cả 2 chiều
-        buy_cost = b['price'] * b['shares'] * (1 + commission_pct)
-        if s['cash'] > buy_cost:
-            win += 1
-    return win / total * 100, total
-
 
 def run_walk_forward_evaluation(dates, equity, bh_equity):
     n = len(dates)
@@ -291,7 +345,7 @@ def main():
 
         if trans_only:
             if not os.path.exists(trans_path):
-                print(f"❌ Không tìm thấy model Transformer cho {ticker}. Chạy run_training_transformer.py trước.")
+                print(f"❌ Không tìm thấy model Transformer cho {ticker}. Chạy run_training.py trước.")
                 continue
         else:
             if not (os.path.exists(xgb_path) and os.path.exists(trans_path)):
@@ -343,15 +397,18 @@ def main():
         )
 
         metrics              = compute_metrics(equity, bh_equity, dates)
-        win_rate, total_lnhs = compute_win_rate(trades, commission_pct)
+        win_rate, total_lnhs, profit_factor = compute_trade_metrics(trades, commission_pct)
 
         print(f"\n🏆 KẾT QUẢ BACKTEST (Out-of-Sample):")
         print(f"   📈 Chiến lược : {metrics['strat_return']:+.2f}%")
         print(f"   📦 Buy&Hold  : {metrics['bh_return']:+.2f}%")
+        print(f"   {ticker} Static: Strategy {metrics['strat_return']:+.2f}% vs B&H {metrics['bh_return']:+.2f}%")
         print(f"   📊 Sharpe    : {metrics['sharpe']:.2f}")
         print(f"   📉 Max DD    : {metrics['mdd']:.2f}% (B&H: {metrics['bh_mdd']:.2f}%)")
+        print(f"   ⚖️  Calmar    : {metrics['calmar']:.2f}")
         print(f"   🔔 Số lệnh   : {total_lnhs}")
         print(f"   🥇 Win Rate  : {win_rate:.2f}%")
+        print(f"   💵 Profit F.  : {profit_factor:.2f}")
 
         wf = run_walk_forward_evaluation(dates, equity, bh_equity)
         print(f"\n🎯 WALK-FORWARD (3 Windows):")

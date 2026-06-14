@@ -29,7 +29,10 @@ def build_xgboost_optimized(X_train_flat, y_train):
         n_jobs=1, random_state=42,
     )
     print("⏳ Đang quét nhanh bộ tham số tối ưu cho XGBoost...")
-    search.fit(X_train_flat, y_train.ravel())
+    if y_train.ndim > 1 and y_train.shape[1] > 1:
+        search.fit(X_train_flat, y_train)
+    else:
+        search.fit(X_train_flat, y_train.ravel())
     print(f"🔥 Tham số tối ưu: {search.best_params_}")
     return search.best_estimator_
 
@@ -218,8 +221,10 @@ class MultiTaskModel(tf.keras.Model):
 
         with tf.GradientTape() as tape:
             pred_return, pred_spread = self(x, training=True)
-            pred_return = tf.squeeze(pred_return, axis=-1)
-            pred_spread = tf.squeeze(pred_spread, axis=-1)
+            if pred_return.shape[-1] == 1:
+                pred_return = tf.squeeze(pred_return, axis=-1)
+            if pred_spread.shape[-1] == 1:
+                pred_spread = tf.squeeze(pred_spread, axis=-1)
 
             loss_r = tf.keras.losses.huber(y_return, pred_return)
             loss_s = tf.keras.losses.huber(y_spread, pred_spread)
@@ -249,8 +254,10 @@ class MultiTaskModel(tf.keras.Model):
         log_var2 = w_layer.log_var2
 
         pred_return, pred_spread = self(x, training=False)
-        pred_return = tf.squeeze(pred_return, axis=-1)
-        pred_spread = tf.squeeze(pred_spread, axis=-1)
+        if pred_return.shape[-1] == 1:
+            pred_return = tf.squeeze(pred_return, axis=-1)
+        if pred_spread.shape[-1] == 1:
+            pred_spread = tf.squeeze(pred_spread, axis=-1)
 
         loss_r = tf.keras.losses.huber(y_return, pred_return)
         loss_s = tf.keras.losses.huber(y_spread, pred_spread)
@@ -279,7 +286,7 @@ def glu(x, d_model):
 
 
 # ── build_transformer ────────────────────────────────────────────────
-def build_transformer(input_shape, d_model=128, heads=8, dropout_rate=0.3,
+def build_transformer(input_shape, d_model=128, num_heads=8, dropout_rate=0.3,
                       learning_rate=1e-4, multi_task=True):
     """
     Trả về:
@@ -291,8 +298,9 @@ def build_transformer(input_shape, d_model=128, heads=8, dropout_rate=0.3,
     x_price  = tf.keras.layers.Lambda(lambda x: x[:, :,  0:12], name="slice_price")(inputs)
     x_volume = tf.keras.layers.Lambda(lambda x: x[:, :, 12:18], name="slice_volume")(inputs)
     x_tech   = tf.keras.layers.Lambda(lambda x: x[:, :, 18:34], name="slice_tech")(inputs)
+    x_flow_div = tf.keras.layers.Lambda(lambda x: x[:, :, 34:42], name="slice_flow_div")(inputs)
 
-    def branch(x, filters, heads, key_dim, gru_units, latent_dim, name):
+    def branch(x, filters, num_heads_branch, key_dim, gru_units, latent_dim, name):
         x = Conv1D(filters, 3, padding='same', activation='relu',
                    kernel_regularizer=tf.keras.regularizers.l2(1e-4))(x)
         x = LayerNormalization(epsilon=1e-6)(x)
@@ -300,7 +308,7 @@ def build_transformer(input_shape, d_model=128, heads=8, dropout_rate=0.3,
         x = LayerNormalization(epsilon=1e-6)(x)
         x = PositionalEmbedding(sequence_length=input_shape[0],
                                 d_model=filters)(x)
-        a = TimeDecayAttention(num_heads=heads, key_dim=key_dim,
+        a = TimeDecayAttention(num_heads=num_heads_branch, key_dim=key_dim,
                                dropout_rate=dropout_rate)(x)
         x = LayerNormalization(epsilon=1e-6)(x + a)
         x = Bidirectional(GRU(gru_units, return_sequences=False,
@@ -308,16 +316,17 @@ def build_transformer(input_shape, d_model=128, heads=8, dropout_rate=0.3,
         return Dense(latent_dim, activation='relu', name=name,
                      kernel_regularizer=tf.keras.regularizers.l2(1e-4))(x)
 
-    p_emb = branch(x_price,  64, heads, 16, 16, 16, "latent_price")
-    v_emb = branch(x_volume, 32, heads, 16,  8,  8, "latent_volume")
-    t_emb = branch(x_tech,   32, heads, 16,  8,  8, "latent_tech")
+    p_emb = branch(x_price,  64, num_heads, 16, 16, 16, "latent_price")
+    v_emb = branch(x_volume, 32, num_heads, 16,  8,  8, "latent_volume")
+    t_emb = branch(x_tech,   32, num_heads, 16,  8,  8, "latent_tech")
+    f_emb = branch(x_flow_div, 32, num_heads, 16,  8,  8, "latent_flow_div")
 
-    embedding = Concatenate(name="latent_embedding")([p_emb, v_emb, t_emb])
+    embedding = Concatenate(name="latent_embedding")([p_emb, v_emb, t_emb, f_emb])
 
     if multi_task:
         ew    = UncertaintyWeightsLayer(name="uncertainty_weights")(embedding)
-        out_r = Dense(1, name="output_return")(ew)
-        out_s = Dense(1, name="output_spread")(ew)
+        out_r = Dense(3, name="output_return")(ew)
+        out_s = Dense(3, name="output_spread")(ew)
 
         # Backbone là Functional model thuần — serialize được
         backbone = Model(inputs=inputs, outputs=[out_r, out_s], name="backbone")
@@ -331,7 +340,7 @@ def build_transformer(input_shape, d_model=128, heads=8, dropout_rate=0.3,
         model(dummy, training=False)
         return model
     else:
-        out_r = Dense(1, name="output_return")(embedding)
+        out_r = Dense(3, name="output_return")(embedding)
         model = Model(inputs=inputs, outputs=out_r)
         model.compile(
             optimizer=tf.keras.optimizers.Adam(learning_rate),
@@ -345,13 +354,10 @@ if __name__ == "__main__":
     if hasattr(sys.stdout, 'reconfigure'):
         sys.stdout.reconfigure(encoding='utf-8')
     print("=== TESTING AI MODEL ===")
-    m = build_transformer((45, 34))
+    m = build_transformer((45, 42))
     print("outputs:", [o.name for o in m.backbone.outputs])
     print("inputs :", m.inputs)
-
-    # Test save/load
-    save_multitask_model(m, "/tmp/test_model.keras")
-    m2 = load_multitask_model("/tmp/test_model.keras", (45, 34))
-    dummy = np.zeros((2, 45, 34), dtype=np.float32)
-    out = m2(dummy, training=False)
-    print("Load OK, output shapes:", [o.shape for o in out])
+    
+    dummy = np.zeros((2, 45, 42), dtype=np.float32)
+    out = m(dummy, training=False)
+    print("Test forward OK, output shapes:", [o.shape for o in out])

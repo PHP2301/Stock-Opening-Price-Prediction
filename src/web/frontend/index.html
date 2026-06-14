@@ -112,6 +112,9 @@
                                 <span class="range-label">Khoảng an toàn:</span>
                                 <span class="range-val" id="xgb-range">[0 - 0] VNĐ</span>
                             </div>
+                            <div class="forecast-3day" id="xgb-3day-list">
+                                <!-- Will be populated with 3-day prices -->
+                            </div>
                         </div>
 
                         <!-- Transformer prediction -->
@@ -125,6 +128,9 @@
                             <div class="model-range">
                                 <span class="range-label">Khoảng an toàn:</span>
                                 <span class="range-val" id="trans-range">[0 - 0] VNĐ</span>
+                            </div>
+                            <div class="forecast-3day" id="trans-3day-list">
+                                <!-- Will be populated with 3-day prices -->
                             </div>
                         </div>
                     </div>
@@ -143,6 +149,48 @@
                         <!-- News items will be loaded dynamically -->
                         <div class="news-empty">Không có tin tức gần đây.</div>
                     </div>
+                </div>
+            </section>
+
+            <!-- Multi-Agent Trading Desk Card -->
+            <section class="multi-agent-section card">
+                <div class="card-header border-bottom">
+                    <h2 class="card-title"><i class="fa-solid fa-users-gear"></i> Ban Cố Vấn AI (Multi-Agent Trading Desk)</h2>
+                    <span class="agent-desk-status"><i class="fa-solid fa-circle-check"></i> Đồng Thuận Thành Công</span>
+                </div>
+                <div class="agent-desk-content">
+                    <div class="agent-decision-pane">
+                        <div class="consensus-box">
+                            <span class="consensus-title">KHUYẾN NGHỊ ĐỒNG THUẬN</span>
+                            <div class="consensus-badge" id="consensus-action">HOLD</div>
+                            <div class="confidence-gauge">
+                                <span class="gauge-label">Độ tin cậy: <strong id="consensus-confidence">0%</strong></span>
+                                <div class="progress-bar-bg">
+                                    <div class="progress-bar-fill" id="consensus-confidence-fill" style="width: 0%"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="targets-box">
+                            <div class="target-item sl">
+                                <span class="target-label"><i class="fa-solid fa-shield-halved"></i> Cắt lỗ (Stop Loss):</span>
+                                <span class="target-val" id="consensus-sl">---</span>
+                            </div>
+                            <div class="target-item tp">
+                                <span class="target-label"><i class="fa-solid fa-circle-dollar-to-slot"></i> Chốt lời (Take Profit):</span>
+                                <span class="target-val" id="consensus-tp">---</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="agent-debate-pane">
+                        <span class="pane-title"><i class="fa-solid fa-comments"></i> Nhật ký cuộc họp & tranh biện nội bộ</span>
+                        <div class="debate-log-box" id="debate-log">
+                            <div class="debate-line system">Bắt đầu phiên phân tích của các Agent...</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="agent-reasoning-pane">
+                    <span class="pane-title"><i class="fa-solid fa-lightbulb"></i> Luận điểm quyết định</span>
+                    <p id="consensus-reasoning">Đang tải phân tích chiến lược từ Ban Cố Vấn...</p>
                 </div>
             </section>
         </main>

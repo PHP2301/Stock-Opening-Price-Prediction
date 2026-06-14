@@ -75,6 +75,18 @@ Nhờ các cải tiến trên, sai số dự báo trung bình tuyệt đối (MA
 
 ---
 
+
+### 🔵 Ngày 8 & 9 (12/06/2026 - 13/06/2026): Triển khai Rolling Walk-Forward Backtesting (Phase 2.3)
+*   **Mục tiêu:** Xây dựng hệ thống tự động tái huấn luyện cuốn chiếu (Rolling retraining) theo năm để thích ứng với hiện tượng trượt phân phối dữ liệu (Distribution Shift) và so sánh hiệu quả thực tế.
+*   **Công việc đã làm:**
+    *   Phát triển kịch bản `scripts/run_walk_forward_backtest.py` chạy qua 3 Window cuốn chiếu (2023, 2024, 2025-2026).
+    *   Tách biệt khâu fit/transform của Scaler trên tập huấn luyện của từng Window nhằm chống rò rỉ thông tin tương lai.
+    *   Thiết kế cơ chế nạp trọng số warm-start (set_weights) cho Transformer qua từng Window giúp rút ngắn thời gian huấn luyện từ 3 phút xuống dưới 30 giây.
+    *   Thực hiện chạy và đánh giá hiệu quả trên cả 3 mã với threshold 0.10% và lưu trữ các đồ thị Equity Curve tương ứng.
+*   **Kết quả:**
+    *   Mô hình Rolling giải quyết xuất sắc bias âm của GOOGL trong giai đoạn AI bull run, giúp chiến lược đạt lợi nhuận **+100.75%** (Sharpe 1.39) so với mô hình tĩnh.
+    *   Đối với VNM.VN, tỷ lệ thắng vẫn ở mức rất thấp (12.82%), củng cố kết luận rằng VNM.VN không có Edge thực sự để giao dịch hiệu quả.
+
 ## 📂 DANH SÁCH CÁC FILE CHÍNH TRONG HỆ THỐNG
 
 *   `scripts/run_pipeline.py`: Điểm kích hoạt toàn bộ luồng tải dữ liệu, chuẩn hóa, huấn luyện độc lập cho từng mã, vẽ biểu đồ so sánh kết quả và đưa ra dự báo cho phiên tiếp theo.

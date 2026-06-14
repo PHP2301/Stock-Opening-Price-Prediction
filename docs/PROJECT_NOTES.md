@@ -20,43 +20,49 @@ Hệ thống sử dụng cơ chế gộp dữ liệu thông minh từ 2 nguồn 
 
 ---
 
-### 📈 Các đặc trưng đầu vào (24 Features)
+### 📈 Các đặc trưng đầu vào (42 Features)
 
-Để dự báo xu hướng, hệ thống tính toán 24 chỉ báo kỹ thuật và vĩ mô dạng dừng (stationary features) sau khi làm mịn qua bộ lọc nhiễu **Kalman Filter**:
+Để dự báo xu hướng, hệ thống tính toán 42 chỉ báo kỹ thuật, vĩ mô, cổ tức và dòng tiền dạng dừng (stationary features) sau khi làm mịn qua bộ lọc nhiễu **Kalman Filter**:
 
-- `close_smoothed`: Giá đóng cửa được làm mịn bằng Kalman Filter để khử nhiễu ngắn hạn.
-- `close_lag1`: Giá đóng cửa của ngày hôm trước (độ trễ 1 phiên).
-- `volume_change`: Tỷ lệ thay đổi khối lượng giao dịch so với phiên trước.
-- `intraday_return`: Tỷ suất sinh lời trong ngày `(Close - Open) / Open`.
-- `volatility_20`: Độ lệch chuẩn của tỷ suất sinh lời trong 20 phiên gần nhất (đo lường biến động).
-- `rsi_14`: Chỉ số sức mạnh tương đối (Relative Strength Index).
-- `macd_ratio`: Chỉ báo MACD line được chia cho Close hiện tại để dừng hóa đặc trưng.
-- `bb_lower`, `bb_middle`, `bb_upper`: Dải dưới, dải giữa, dải trên của Bollinger Bands (chu kỳ 20 phiên, độ lệch 2) dạng tỷ lệ so với Close.
-- `atr_ratio`: Chỉ báo biên độ dao động thực tế trung bình (Average True Range) chia cho Close.
-- `ema_14_ratio`: Đường trung bình di động lũy thừa (EMA 14 phiên) dạng tỷ lệ so với Close.
-- `roc_10`: Tốc độ thay đổi giá (Rate of Change 10 phiên) đo lường động lượng giá.
-- `adx_14`: Chỉ số định hướng trung bình (ADX 14 phiên) xác định cường độ mạnh/yếu của xu hướng hiện tại.
-- `bond_yield_10y`: Lợi suất trái phiếu chính phủ Mỹ 10 năm (`^TNX`) đo lường biến động vĩ mô và dòng tiền liên thị trường.
-- `dollar_index_change`: Biến động tỷ lệ ngày của chỉ số sức mạnh Dollar Index (`DX-Y.NYB`).
-
----
-
-### 🎯 Biến mục tiêu dự báo (Target)
-
-Mô hình dự báo **Tỷ suất lợi nhuận mở cửa ngày mai (`target_return`)**:
-$$\text{target-return} = \frac{\text{Open}_{tomorrow} - \text{Close}_{today}}{\text{Close}_{today}}$$
-
-Sau khi AI dự báo ra tỷ suất này, hệ thống sẽ tự động quy đổi ngược về giá tiền thực tế:
-$$\text{Giá mở cửa dự báo} = \text{Close}_{today} \times (1 + \text{target-return}_{predicted})$$
-
----
-
-## 2. PHƯƠNG PHÁP HUẤN LUYỆN (TRAINING FLOW)
+1.  **Nhánh 1: Giá & Động lượng (12 đặc trưng):**
+    - `gap_open`: Chênh lệch giá mở cửa hôm nay so với đóng cửa hôm trước.
+    - `open_return`: Tỷ suất sinh lời mở cửa.
+    - `buying_pressure`: Áp lực mua trong phiên.
+    - `shadow_ratio`: Tỷ lệ bóng nến trên/dưới.
+    - `intraday_range`: Biên độ dao động giá nội phiên.
+    - `return_1d`, `return_2d`, `return_3d`: Tỷ suất sinh lời đóng cửa các phiên trước.
+    - `mom_5d`, `mom_10d`, `mom_20d`: Chỉ báo động lượng động thái giá.
+    - `dist_ma50`: Khoảng cách tương đối từ giá hiện tại đến đường SMA 50.
+2.  **Nhánh 2: Khối lượng & Biến động (6 đặc trưng):**
+    - `volume_change`: Tốc độ thay đổi khối lượng giao dịch.
+    - `volume_sma_ratio`: Khối lượng hiện tại so với trung bình 20 phiên.
+    - `volume_zscore`: Điểm chuẩn hóa Z-score khối lượng (kích hoạt slippage động).
+    - `ad_line_ratio`: Chỉ báo tích lũy/phân phối chuẩn hóa.
+    - `obv_zscore`: Z-score của chỉ số khối lượng cân bằng tích lũy OBV.
+    - `vol_ratio`: Biến động khối lượng tương đối.
+3.  **Nhánh 3: Kỹ thuật, Vĩ mô & Lịch (16 đặc trưng):**
+    - `rsi_14`: Chỉ số sức mạnh tương đối.
+    - `macd_ratio`: Tỷ lệ đường MACD trên đường tín hiệu Signal.
+    - `bb_position`: Vị trí tương đối của giá trong dải Bollinger Bands.
+    - `adx_14`: Chỉ số định hướng trung bình (đo sức mạnh xu hướng).
+    - `stoch_k`: Chỉ báo dao động ngẫu nhiên Stochastic %K.
+    - `efficiency_ratio`: Chỉ số hiệu quả Kaufman (đo lường độ nhiễu của giá).
+    - `vix_lag1`: Chỉ số biến động VIX trễ 1 ngày.
+    - `bond_yield_lag1`: Lợi suất trái phiếu chính phủ Mỹ 10 năm trễ 1 ngày.
+    - `usdvnd_change`: Biến động tỷ giá USD/VND.
+    - `vnindex_return_lag1`: Lợi suất chỉ số VN-Index (đối với mã Việt Nam).
+    - `day_of_week_sin` / `cos` / `month_sin` / `cos`: Mã hóa dạng sóng tuần hoàn thời gian.
+    - `is_quarter_end`: Đánh dấu các ngày chốt sổ cuối quý.
+    - `days_before_tet`: Số ngày đếm ngược đến Tết Nguyên Đán (áp dụng riêng cho VNM.VN).
+4.  **Nhánh 4: Dòng tiền & Cổ tức (8 đặc trưng):**
+    - `mfi_14`: Chỉ số dòng tiền Money Flow Index.
+    - `dividend_flag`: Tín hiệu ngày không hưởng quyền (ex-dividend date).
+    - `days_to_dividend`: Số ngày đếm ngược đến kỳ cổ tức ti�## 2. PHƯƠNG PHÁP HUẤN LUYỆN (TRAINING FLOW)
 
 - **Tính tái lập (Reproducibility):** Cố định seed toàn cục `SEED = 42` cho Numpy, Random, TensorFlow.
 - **Cửa sổ trượt (Sliding Window):** Sử dụng `time_steps = 45` phiên giao dịch liên tiếp trong quá khứ (~2.5 tháng) làm chuỗi dữ liệu đầu vào.
-- **Chuẩn hóa dữ liệu (Scaling):** Sử dụng `MinMaxScaler` đưa dữ liệu về khoảng `[0, 1]`. Bộ chuẩn hóa đầu vào (`feature_scaler`) và đầu ra (`target_scaler`) được tách riêng biệt.
-- **Chia tập dữ liệu (Split Strategy):** Chia tỷ lệ **80% huấn luyện (Train) / 20% kiểm thử (Test)** theo trật tự thời gian (Chronological Split) để tránh rò rỉ dữ liệu tương lai.
+- **Chuẩn hóa dữ liệu (Scaling):** Sử dụng `StandardScaler` (cho cả đặc trưng đầu vào `feature_scaler` và biến mục tiêu `target_scaler`) giúp chuyển đổi dữ liệu về dạng có trung bình = 0 và độ lệch chuẩn = 1.
+- **Chia tập dữ liệu (Split Strategy):** Chia tỷ lệ **80% huấn luyện (Train) / 20% kiểm thử (Test)** theo trật tự thời gian (Chronological Split) với Purge Gap = 45 phiên để tránh rò rỉ dữ liệu tương lai.
 
 ---
 
@@ -66,8 +72,8 @@ Hệ thống huấn luyện song song hai mô hình tối ưu nhất:
 
 ### 1. 🌳 XGBoost (Extreme Gradient Boosting)
 
-- **Đặc điểm:** Mô hình dạng cây quyết định nâng cao, rất mạnh với dữ liệu dạng bảng. Cần làm phẳng dữ liệu chuỗi 3D thành 2D trước khi đưa vào huấn luyện.
-- **Tối ưu tham số (GridSearchCV):** Áp dụng quét lưới kết hợp kiểm thử chéo chuỗi thời gian (`TimeSeriesSplit` với 5 splits) chạy song song (`n_jobs=-1`) để tự động tìm kiếm bộ siêu tham số tốt nhất.
+- **Đặc điểm:** Mô hình dạng cây quyết định nâng cao, rất mạnh với dữ liệu dạng bảng. XGBoost trong mô hình lai (Hybrid model) nhận đầu vào là sự kết hợp của **42 đặc trưng thô + 40 đặc trưng ẩn (latent features)** được trích xuất từ Transformer, tạo thành vector đầu vào **82 chiều**.
+- **Tối ưu tham số (GridSearchCV):** Áp dụng quét lưới kết hợp kiểm thử chéo chuỗi thời gian (`TimeSeriesSplit` với 5 splits) để tự động tìm kiếm bộ siêu tham số tốt nhất.
 - **Bộ tham số tối ưu tìm được:**
   - **VNM.VN:** `{'subsample': 0.9, 'n_estimators': 150, 'max_depth': 4, 'learning_rate': 0.03, 'colsample_bytree': 1.0}`
   - **GOOGL:** `{'subsample': 0.8, 'n_estimators': 200, 'max_depth': 3, 'learning_rate': 0.03, 'colsample_bytree': 0.8}`
@@ -79,6 +85,22 @@ Hệ thống huấn luyện song song hai mô hình tối ưu nhất:
 | **`n_estimators`** (150-200)           | Số lượng cây quyết định được tạo lập tuần tự để bổ trợ sai số cho nhau.                | Giúp mô hình đạt độ hội tụ sai số tối thiểu mà không tiêu tốn tài nguyên tính toán.                                                                             |
 | **`learning_rate`** (0.03)            | Tốc độ học (hệ số co hẹp đóng góp của mỗi cây quyết định mới).                         | Giá trị nhỏ `0.03` giúp mô hình học từ từ qua từng cây, tránh hiện tượng nhảy quá đà (Overfitting) và khớp mịn hơn với xu hướng dài hạn.                        |
 | **`max_depth`** (3 hoặc 4)            | Độ sâu tối đa (số tầng phân nhánh tối đa) của mỗi cây quyết định.                      | Cây nông ở mức 3 hoặc 4 giúp giới hạn độ phức tạp của mỗi cây, ngăn chặn việc cây học thuộc lòng các nhiễu nhỏ trong giá sàn.                                   |
+| **`subsample`** (0.8 hoặc 0.9)        | Tỷ lệ số dòng dữ liệu (phiên giao dịch) được lấy mẫu ngẫu nhiên để huấn luyện mỗi cây. | Mỗi cây chỉ học trên 80-90% số phiên ngẫu nhiên. Việc này tạo ra sự đa dạng và giúp mô hình chống chịu tốt hơn trước các đột biến giá ngắn hạn (nhiễu thị trường). |
+| **`colsample_bytree`** (0.8 hoặc 1.0) | Tỷ lệ số cột dữ liệu (đặc trưng kỹ thuật) được chọn ngẫu nhiên khi xây dựng mỗi cây.   | Rút ngẫu nhiên 80% hoặc dùng cả 100% số cột đặc trưng đầu vào giúp mô hình không bị lệ thuộc phiến diện vào một vài chỉ báo kỹ thuật cụ thể.                    |
+
+### 2. 🤖 Branched Multi-Task Transformer
+
+- **Đặc điểm:** Kiến trúc Deep Learning đa nhiệm tiên tiến nhất sử dụng cơ chế chú ý (Multi-Head Self-Attention) phân nhánh độc lập tương ứng với 4 nhóm đặc trưng đầu vào để trích xuất 40 chiều đặc trưng ẩn (latent embedding).
+- **Cấu trúc chi tiết:**
+  - **Nhánh đầu vào phân nhánh (4 Branches):** Mỗi nhánh (Giá, Khối lượng, Kỹ thuật, Dòng tiền/Cổ tức) đi qua lớp Conv1D (64 filters) và Dense layer độc lập để tạo ra không gian biểu diễn riêng.
+  - **Lớp Attention chung (Multi-Head Self-Attention):** Sử dụng 8 heads (`num_heads=8`, `key_dim=64`) để tính toán mối quan hệ tuần hoàn và liên kết dài hạn giữa các ngày khác nhau trong cửa sổ trượt 45 phiên.
+  - **Hai đầu ra đa nhiệm (Multi-task Heads):**
+    - `return_head`: Dự báo tỷ suất lợi nhuận mở cửa (T+1, T+2, T+3).
+    - `spread_head`: Dự báo độ rộng chênh lệch mở/đóng (T+1, T+2, T+3).
+  - **Bộ cân bằng trọng số tự động (Uncertainty Weighting):** Sử dụng lớp tùy chỉnh `UncertaintyWeightsLayer` để tự động điều chỉnh trọng số hàm mất mát (Huber Loss) của 2 đầu ra trong quá trình lan truyền ngược gradient.
+  - **Biên dịch và điều phối học:** Sử dụng thuật toán tối ưu `Adam` (tốc độ học từ `1e-4` giảm dần qua Cosine Decay), tích hợp `EarlyStopping` và `ReduceLROnPlateau`.
+
+---            |
 | **`subsample`** (0.8 hoặc 0.9)        | Tỷ lệ số dòng dữ liệu (phiên giao dịch) được lấy mẫu ngẫu nhiên để huấn luyện mỗi cây. | Mỗi cây chỉ học trên 80-90% số phiên ngẫu nhiên. Việc này tạo ra sự đa dạng và giúp mô hình chống chịu tốt hơn trước các đột biến giá ngắn hạn (nhiễu thị trường). |
 | **`colsample_bytree`** (0.8 hoặc 1.0) | Tỷ lệ số cột dữ liệu (đặc trưng kỹ thuật) được chọn ngẫu nhiên khi xây dựng mỗi cây.   | Rút ngẫu nhiên 80% hoặc dùng cả 100% số cột đặc trưng đầu vào giúp mô hình không bị lệ thuộc phiến diện vào một vài chỉ báo kỹ thuật cụ thể.                    |
 
@@ -177,9 +199,25 @@ Hệ thống đã trải qua một đợt nâng cấp quan trọng liên quan đ
 - Khi có yêu cầu dự báo (`POST /api/predict/trigger/{ticker}`), các tin tức crawl được sẽ được phân tích điểm số cảm xúc (VADER/FinBERT) và tự động ghi vào bảng cơ sở dữ liệu `news_sentiments`.
 - Điều này giúp giao diện Web Dashboard hiển thị trực tiếp danh sách bài báo cùng điểm số và nhãn cảm xúc cụ thể tương ứng cho từng mã cổ phiếu.
 
-### ⚙️ Lộ trình Tối ưu hóa AI cốt lõi tiếp theo (Bỏ qua yếu tố Web):
-1. **Đồng bộ Kalman Filter**: Đưa Kalman Filter làm mịn giá đóng cửa vào hàm `fetch_and_prepare_data` trong `src/data_loader.py` để đồng nhất dữ liệu chỉ báo kỹ thuật lúc Train và lúc Inference.
-2. **Tuning Optuna Độc lập**: Chỉnh sửa `scripts/run_tuning.py` để tìm kiếm siêu tham số tối ưu riêng biệt cho từng mã cổ phiếu (VNM.VN, GOOGL, META) thay vì dùng chung cấu hình của META.
-3. **Xây dựng hệ thống Backtest lịch sử**: Viết script giả lập các chiến lược giao dịch thực tế trên tập Test để đo lường lợi nhuận thực tế (Total Return, Sharpe Ratio, Maximum Drawdown).
+### ⚙️ Cải Tiến & Đồng Bộ Hệ Thống (Cập nhật 13/06/2026)
+
+Hệ thống đã hoàn thành việc đồng bộ hóa và nâng cấp AI cốt lõi bao gồm:
+1. **Đồng bộ Kalman Filter**: Tích hợp bộ lọc Kalman làm mịn giá trực tiếp vào hàm `fetch_and_prepare_data` trong `src/data_loader.py`.
+2. **Tuning Optuna Độc lập**: Tối ưu hóa siêu tham số riêng biệt cho từng mã cổ phiếu, cải thiện đáng kể độ khớp.
+3. **Dự Báo & Mô Hình Đa Mục Tiêu (Multi-Task Learning)**: Chuyển đổi mô hình sang dự báo chuỗi 3 ngày liên tiếp (T+1, T+2, T+3) cho cả biến Tỷ suất sinh lời (Return) và Độ rộng chênh lệch (Spread), sử dụng cơ chế tự động cân bằng trọng số hàm mất mát (Kendall uncertainty weighting).
+4. **Hệ Thống Kiểm Định Cuốn Chiếu Rolling Walk-Forward Backtesting**: Triển khai kịch bản giao dịch thực tế mô phỏng năm-theo-năm (2023–2026) với cơ chế tự động tái huấn luyện cuốn chiếu (`scripts/run_walk_forward_backtest.py`), ngăn chặn hiện tượng rò rỉ dữ liệu (scaling isolation) và tối ưu hóa thời gian huấn luyện qua cơ chế warm-start weights.
+
+### 📊 Kết quả Backtest Walk-Forward Cuốn Chiếu (2023 - 2026)
+*Tham số giao dịch qua đêm (Overnight): Phí VN = 0.20%, Phí US = 0.15%, Trượt giá = 0.10%, Ngưỡng tín hiệu = 0.10%*
+
+- **GOOGL (Alphabet)**: Đạt hiệu quả vượt trội. Chiến lược đạt lợi nhuận **+100.75%** (Sharpe **1.39**, Max Drawdown **-16.68%** trên 53 lệnh giao dịch). Việc tự động cập nhật trọng số hàng năm giúp mô hình xóa bỏ hoàn toàn bias âm từ dữ liệu lịch sử và tận dụng đà tăng trưởng mạnh mẽ của kỷ nguyên AI.
+- **META**: Đạt lợi nhuận chiến lược **+23.66%** (Sharpe **0.38**, Max Drawdown **-37.97%** trên 56 lệnh). Mô hình hoạt động cực tốt trong chu kỳ phục hồi năm 2023.
+- **VNM.VN**: Ghi nhận lợi nhuận chiến lược **-37.06%** (Sharpe **-1.25** trên 39 lệnh). Điều này củng cố phân tích trước đó rằng VNM.VN có tín hiệu tương quan rất yếu (+0.03), việc giao dịch liên tục chỉ làm hao mòn tài sản qua phí và trượt giá, xác nhận chiến lược đối với VNM.VN không có Edge thực tế.
+
+Để chạy giả lập kiểm định cuốn chiếu cho một mã cổ phiếu:
+```powershell
+python scripts/run_walk_forward_backtest.py GOOGL
+```
+Đồ thị so sánh đường cong tài sản tích lũy (Equity Curve) sẽ tự động được xuất ra tại thư mục `reports/figures/walk_forward_equity_curve_{ticker}.png`.
 
 

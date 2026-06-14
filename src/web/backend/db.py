@@ -64,6 +64,11 @@ class PredictionRecord(Base):
     risk_level = Column(String, nullable=False)
     usd_vnd_rate = Column(Float, nullable=True)
     actual_open_price = Column(Float, nullable=True)
+    
+    # New Phase 2 columns
+    xgb_predicted_prices_json = Column(String, nullable=True)
+    trans_predicted_prices_json = Column(String, nullable=True)
+    agent_decision_json = Column(String, nullable=True)
 
     stock = relationship("Stock", back_populates="predictions")
 

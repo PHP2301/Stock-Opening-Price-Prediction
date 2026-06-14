@@ -1,7 +1,14 @@
+import sys
 import numpy as np
 import pandas as pd
 import pandas_ta as ta
 from sklearn.preprocessing import StandardScaler
+
+# Configure UTF-8 for console output to avoid Windows charmap encoding issues
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8')
 
 
 def kalman_filter(series: pd.Series, R: float = 0.01, Q: float = 1e-5) -> pd.Series:
@@ -42,9 +49,13 @@ class DataTransformer:
             'day_of_week_sin', 'day_of_week_cos',
             'month_sin', 'month_cos',
             'is_quarter_end', 'days_before_tet',
+            # Nhánh 4 — Dòng tiền & Cổ tức (8 mới)
+            'mfi_14', 'dividend_flag', 'days_to_dividend', 'days_after_dividend',
+            'foreign_net_buy_proxy', 'foreign_net_buy_5d', 'foreign_net_buy_20d',
+            'self_net_buy_proxy'
         ]
-        self.target_col = 'target_return'
-        self.spread_col = 'target_spread'
+        self.target_cols = ['target_return_1d', 'target_return_2d', 'target_return_3d']
+        self.spread_cols = ['target_spread_1d', 'target_spread_2d', 'target_spread_3d']
 
     def transform_df(self, df: pd.DataFrame) -> pd.DataFrame:
         df_copy = df.copy().replace([np.inf, -np.inf], np.nan)
@@ -145,9 +156,35 @@ class DataTransformer:
                     'vnindex_return_lag1', 'day_of_week_sin', 'day_of_week_cos',
                     'month_sin', 'month_cos', 'is_quarter_end', 'days_before_tet']:
             if col in df.columns:
-                df_copy[col] = df[col].values
+                df_copy[col] = df[col].reset_index(drop=True).values
             else:
                 df_copy[col] = 0.0
+
+        # Passthrough các cột cổ tức từ data_loader (mặc định nếu thiếu)
+        for col in ['dividend_flag', 'days_to_dividend', 'days_after_dividend']:
+            if col in df.columns:
+                df_copy[col] = df[col].reset_index(drop=True).values
+            else:
+                df_copy[col] = 60.0 if col != 'dividend_flag' else 0.0
+
+        # ── Nhánh 4: Dòng tiền & Cổ tức (Tính toán bổ sung) ───────────
+        # MFI 14 ngày
+        df_copy['mfi_14'] = ta.mfi(df_copy['high'], df_copy['low'], df_copy['close_smoothed'], df_copy['volume'], length=14)
+        df_copy['mfi_14'] = df_copy['mfi_14'].fillna(50.0)
+
+        # Foreign Net Buy Proxy
+        clv = (2 * df_copy['close_smoothed'] - df_copy['high'] - df_copy['low']) / (df_copy['high'] - df_copy['low'] + 1e-9)
+        df_copy['foreign_net_buy_proxy'] = df_copy['volume_zscore'] * clv
+        df_copy['foreign_net_buy_5d'] = df_copy['foreign_net_buy_proxy'].rolling(5).mean()
+        df_copy['foreign_net_buy_20d'] = df_copy['foreign_net_buy_proxy'].rolling(20).mean()
+
+        # Self Net Buy Proxy (MFI Divergence + Volume Spike)
+        mfi_change = df_copy['mfi_14'].diff()
+        price_change = df_copy['close_smoothed'].pct_change()
+        sign_price_opposite = -np.sign(price_change)
+        mfi_divergence = mfi_change * sign_price_opposite
+        large_vol = np.where(df_copy['volume_zscore'] > 2.0, 1.0, 0.0)
+        df_copy['self_net_buy_proxy'] = mfi_divergence * (1.0 + large_vol)
 
         # ── Trích xuất & điền khuyết ──────────────────────────────────
         df_out = pd.DataFrame(index=df.index)
@@ -158,6 +195,9 @@ class DataTransformer:
         for col in self.feature_cols:
             df_out[col] = df_out[col].ffill().bfill().fillna(0.0)
 
+        df_out['days_to_dividend']    = df_out['days_to_dividend'].fillna(60.0)
+        df_out['days_after_dividend'] = df_out['days_after_dividend'].fillna(60.0)
+
         return df_out[self.feature_cols]
 
     def fit_transform_train_only(
@@ -165,7 +205,7 @@ class DataTransformer:
     ):
         df_feats = self.transform_df(df)
         X_raw = df_feats.values
-        y_raw = df[[self.target_col]].values
+        y_raw = df[self.target_cols].values
 
         total_windows    = len(df_feats) - self.time_steps
         split_idx_window = int(total_windows * train_ratio)
@@ -178,8 +218,8 @@ class DataTransformer:
         y_scaled = self.target_scaler.transform(y_raw)
 
         y_spread_scaled = None
-        if self.spread_col in df.columns:
-            y_spread_raw = df[[self.spread_col]].values
+        if all(col in df.columns for col in self.spread_cols):
+            y_spread_raw = df[self.spread_cols].values
             self.spread_scaler.fit(y_spread_raw[:split_idx_raw])
             y_spread_scaled = self.spread_scaler.transform(y_spread_raw)
 
@@ -189,14 +229,14 @@ class DataTransformer:
         """Fit+transform toàn bộ — chỉ dùng cho testing nhanh."""
         df_feats = self.transform_df(df)
         X_raw = df_feats.values
-        y_raw = df[[self.target_col]].values
+        y_raw = df[self.target_cols].values
 
         X_scaled = self.feature_scaler.fit_transform(X_raw)
         y_scaled = self.target_scaler.fit_transform(y_raw)
 
         y_spread_scaled = None
-        if self.spread_col in df.columns:
-            y_spread_raw = df[[self.spread_col]].values
+        if all(col in df.columns for col in self.spread_cols):
+            y_spread_raw = df[self.spread_cols].values
             y_spread_scaled = self.spread_scaler.fit_transform(y_spread_raw)
 
         return X_scaled, y_scaled, y_spread_scaled
@@ -231,7 +271,15 @@ class DataTransformer:
 
         df_align   = df.iloc[self.time_steps:].reset_index(drop=True)
         # FIX: iloc[test_start:] bao gồm đúng rows tương ứng với X_test
-        y_test_raw = df_align.iloc[test_start:][self.target_col].values
+        y_test_raw = df_align.iloc[test_start:][self.target_cols].values
+
+        # Loại bỏ các dòng có target là NaN khỏi tập test (do ngày giao dịch cuối cùng chưa có giá tương lai)
+        non_nan_mask = ~np.isnan(y_test_raw).any(axis=1)
+        X_test = X_test[non_nan_mask]
+        y_test = y_test[non_nan_mask]
+        y_test_raw = y_test_raw[non_nan_mask]
+        if y_test_spread is not None:
+            y_test_spread = y_test_spread[non_nan_mask]
 
         print(f"📊 Split {int(round(train_ratio*100))}/{int(round((1-train_ratio)*100))} "
               f"(Purge Gap: {purge_gap}):")
@@ -250,7 +298,16 @@ class DataTransformer:
         X_test  = X_3D[test_mask];  y_test  = y_3D[test_mask]
         y_train_spread = y_spread_3D[train_mask] if y_spread_3D is not None else None
         y_test_spread  = y_spread_3D[test_mask]  if y_spread_3D is not None else None
-        y_test_raw = df_align.loc[test_mask, self.target_col].values
+        y_test_raw = df_align.loc[test_mask, self.target_cols].values
+
+        # Loại bỏ các dòng có target là NaN khỏi tập test
+        non_nan_mask = ~np.isnan(y_test_raw).any(axis=1)
+        X_test = X_test[non_nan_mask]
+        y_test = y_test[non_nan_mask]
+        y_test_raw = y_test_raw[non_nan_mask]
+        if y_test_spread is not None:
+            y_test_spread = y_test_spread[non_nan_mask]
+
         return (X_train, y_train, X_test, y_test,
                 y_test_raw, y_train_spread, y_test_spread)
 

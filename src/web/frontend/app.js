@@ -224,6 +224,37 @@ async function refreshDashboard() {
             
             predDate.textContent = latestPred.prediction_date;
             targetDate.textContent = latestPred.target_date;
+
+            // Render 3-Day Forecast Grids
+            render3DayForecast("xgb-3day-list", latestPred.xgb_predicted_prices, currency);
+            render3DayForecast("trans-3day-list", latestPred.trans_predicted_prices, currency);
+
+            // Render Multi-Agent consensus
+            const agentDec = latestPred.agent_decision;
+            if (agentDec) {
+                const actionBadge = document.getElementById("consensus-action");
+                actionBadge.textContent = agentDec.action;
+                actionBadge.className = `consensus-badge ${agentDec.action.toLowerCase()}`;
+                
+                const confidence = Math.round(agentDec.confidence_score * 100);
+                document.getElementById("consensus-confidence").textContent = `${confidence}%`;
+                document.getElementById("consensus-confidence-fill").style.width = `${confidence}%`;
+                
+                document.getElementById("consensus-sl").textContent = agentDec.stop_loss > 0 ? formatCurrency(agentDec.stop_loss, currency) : "---";
+                document.getElementById("consensus-tp").textContent = agentDec.take_profit > 0 ? formatCurrency(agentDec.take_profit, currency) : "---";
+                
+                document.getElementById("consensus-reasoning").textContent = agentDec.reasoning;
+                renderDebateLog(agentDec.debate_summary);
+            } else {
+                document.getElementById("consensus-action").textContent = "---";
+                document.getElementById("consensus-action").className = "consensus-badge hold";
+                document.getElementById("consensus-confidence").textContent = "0%";
+                document.getElementById("consensus-confidence-fill").style.width = "0%";
+                document.getElementById("consensus-sl").textContent = "---";
+                document.getElementById("consensus-tp").textContent = "---";
+                document.getElementById("consensus-reasoning").textContent = "Không có dữ liệu tư vấn.";
+                document.getElementById("debate-log").innerHTML = `<div class="debate-line system">Không có nhật ký tranh biện.</div>`;
+            }
         } else {
             riskEl.textContent = "---";
             riskEl.className = "badge-val";
@@ -240,6 +271,18 @@ async function refreshDashboard() {
             
             predDate.textContent = "---";
             targetDate.textContent = "---";
+
+            // Reset 3-day forecasts and Agent consensus
+            document.getElementById("xgb-3day-list").innerHTML = "";
+            document.getElementById("trans-3day-list").innerHTML = "";
+            document.getElementById("consensus-action").textContent = "---";
+            document.getElementById("consensus-action").className = "consensus-badge hold";
+            document.getElementById("consensus-confidence").textContent = "0%";
+            document.getElementById("consensus-confidence-fill").style.width = "0%";
+            document.getElementById("consensus-sl").textContent = "---";
+            document.getElementById("consensus-tp").textContent = "---";
+            document.getElementById("consensus-reasoning").textContent = "Chưa có dự đoán.";
+            document.getElementById("debate-log").innerHTML = `<div class="debate-line system">Không có nhật ký tranh biện.</div>`;
         }
         
         // Update news feed
@@ -302,15 +345,35 @@ function renderChart(prices, latestPrediction, currency) {
         const lastIdx = recentPrices.length - 1;
         const lastPrice = recentPrices[lastIdx].close;
         
-        labels.push(latestPrediction.target_date);
-        rawData.push(null); // No actual close price for target date yet
-        
-        // Connecting lines start from last close
         xgbData[lastIdx] = lastPrice;
-        xgbData.push(latestPrediction.xgb_predicted_price);
-        
         transData[lastIdx] = lastPrice;
-        transData.push(latestPrediction.trans_predicted_price);
+        
+        const xgbPrices = latestPrediction.xgb_predicted_prices;
+        const transPrices = latestPrediction.trans_predicted_prices;
+        
+        if (xgbPrices && transPrices && xgbPrices.length >= 3 && transPrices.length >= 3) {
+            // Generate 3 business days labels
+            let lastDate = new Date(recentPrices[lastIdx].date);
+            
+            for (let i = 0; i < 3; i++) {
+                // Add business days
+                do {
+                    lastDate.setDate(lastDate.getDate() + 1);
+                } while (lastDate.getDay() === 0 || lastDate.getDay() === 6);
+                
+                const dateStr = lastDate.toISOString().split('T')[0];
+                labels.push(dateStr);
+                rawData.push(null);
+                
+                xgbData.push(xgbPrices[i]);
+                transData.push(transPrices[i]);
+            }
+        } else {
+            labels.push(latestPrediction.target_date);
+            rawData.push(null);
+            xgbData.push(latestPrediction.xgb_predicted_price);
+            transData.push(latestPrediction.trans_predicted_price);
+        }
     }
     
     chartInstance = new Chart(ctx, {
@@ -446,4 +509,86 @@ async function triggerPredict() {
     } finally {
         overlay.classList.remove("active");
     }
+}
+
+// Render 3-Day forecast lists
+function render3DayForecast(containerId, prices, currency) {
+    const container = document.getElementById(containerId);
+    container.innerHTML = "";
+    
+    if (!prices || !Array.isArray(prices) || prices.length < 3) {
+        container.innerHTML = `<div class="forecast-empty-state">Chưa có dự báo T+2, T+3</div>`;
+        return;
+    }
+    
+    const grid = document.createElement("div");
+    grid.className = "forecast-3day-grid";
+    
+    prices.forEach((price, idx) => {
+        const dayLabel = `T+${idx + 1}`;
+        const item = document.createElement("div");
+        item.className = "forecast-3day-item";
+        item.innerHTML = `
+            <span class="forecast-day-label">${dayLabel}</span>
+            <span class="forecast-day-price">${formatCurrency(price, currency)}</span>
+        `;
+        grid.appendChild(item);
+    });
+    
+    container.appendChild(grid);
+}
+
+// Render simulated debate logs with agent icons
+function renderDebateLog(debateSummary) {
+    const container = document.getElementById("debate-log");
+    container.innerHTML = "";
+    
+    if (!debateSummary) {
+        container.innerHTML = `<div class="debate-line system">Không có nhật ký tranh luận.</div>`;
+        return;
+    }
+    
+    const lines = debateSummary.split("\n");
+    lines.forEach(line => {
+        if (!line.trim()) return;
+        
+        const div = document.createElement("div");
+        div.className = "debate-line";
+        
+        const colonIdx = line.indexOf(":");
+        if (colonIdx > 0) {
+            const speaker = line.substring(0, colonIdx).trim();
+            const text = line.substring(colonIdx + 1).trim();
+            
+            let speakerClass = "system";
+            let icon = "fa-robot";
+            if (speaker.toLowerCase().includes("bull")) {
+                speakerClass = "bull";
+                icon = "fa-arrow-trend-up";
+            } else if (speaker.toLowerCase().includes("bear")) {
+                speakerClass = "bear";
+                icon = "fa-arrow-trend-down";
+            } else if (speaker.toLowerCase().includes("risk")) {
+                speakerClass = "risk";
+                icon = "fa-shield-halved";
+            } else if (speaker.toLowerCase().includes("macro")) {
+                speakerClass = "macro";
+                icon = "fa-globe";
+            } else if (speaker.toLowerCase().includes("tech")) {
+                speakerClass = "tech";
+                icon = "fa-microchip";
+            }
+            
+            div.innerHTML = `
+                <span class="debate-speaker ${speakerClass}">
+                    <i class="fa-solid ${icon}"></i> ${speaker}
+                </span>
+                <span class="debate-text">${text}</span>
+            `;
+        } else {
+            div.className = "debate-line system";
+            div.textContent = line;
+        }
+        container.appendChild(div);
+    });
 }

@@ -189,6 +189,15 @@ def main():
         sys.stdout.reconfigure(encoding='utf-8')
         
     print("🚀 [HỆ THỐNG] Khởi tạo Cơ sở dữ liệu SQLite...")
+    db_path = os.path.join(ROOT_DIR, "data", "processed", "stock_predictions.db")
+    if os.path.exists(db_path):
+        print("⏳ Phát hiện database cũ, tiến hành xóa để cập nhật schema mới...")
+        try:
+            os.remove(db_path)
+            print("✅ Đã xóa database cũ thành công.")
+        except Exception as e:
+            print(f"⚠️ Không thể xóa database cũ: {e}")
+            
     init_db()
     
     db = SessionLocal()

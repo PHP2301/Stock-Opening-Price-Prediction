@@ -12,7 +12,7 @@ import matplotlib
 matplotlib.use('Agg')
 # run_training.py — ĐÃ SỬA CÁC LỖI:
 # 1. Thêm RETRAIN_TRANSFORMER flag: nếu False, load Transformer đã train thay vì train lại
-#    → giữ nguyên Transformer tốt nhất từ run_training_transformer.py
+#    → giữ nguyên Transformer tốt nhất từ đợt huấn luyện trước
 # 2. Thay KFold → TimeSeriesSplit(gap=45) cho OOF embeddings
 # 3. Inference: thay tính feature thủ công → dùng transformer.transform_df()
 # 4. Thêm get_return_output() helper để handle list/tuple output nhất quán
@@ -52,10 +52,10 @@ LOOKBACK_WINDOW = 45
 
 # === CẤU HÌNH CHÍNH ===
 # SỬA: Đồng nhất SENTIMENT_ENGINE — dùng cùng engine cho train và inference
-SENTIMENT_ENGINE = 'finbert'   # hoặc 'vader' — phải giống run_training_transformer.py
+SENTIMENT_ENGINE = 'finbert'   # hoặc 'vader' — phải giống thiết lập chung
 
 # SỬA: Flag kiểm soát có train lại Transformer không
-# Đặt False khi đã chạy run_training_transformer.py và muốn giữ Transformer tốt nhất
+# Đặt False khi đã có mô hình được huấn luyện từ trước và muốn giữ Transformer tốt nhất
 RETRAIN_TRANSFORMER = os.environ.get("FORCE_RETRAIN", "1") == "1"
 
 
@@ -87,8 +87,8 @@ def evaluate_predictions(y_true, y_pred, model_name, ticker):
 
 
 def log_prediction_to_file(ticker, last_date, last_close, risk_level, risk_ratio,
-                            xgb_val, xgb_lower, xgb_upper, trans_val, trans_lower, trans_upper,
-                            rate_today=None):
+                            xgb_vals, xgb_lowers, xgb_uppers, trans_vals, trans_lowers, trans_uppers,
+                            rate_today=None, next_dates=None):
     logs_dir = os.path.join(ROOT_DIR, "logs")
     os.makedirs(logs_dir, exist_ok=True)
     log_path  = os.path.join(logs_dir, "predictions_history.txt")
@@ -100,13 +100,30 @@ def log_prediction_to_file(ticker, last_date, last_close, risk_level, risk_ratio
         return f"({emoji} {pct:+.2f}%)"
 
     with open(log_path, "a", encoding="utf-8") as f:
-        f.write(f"=== DỰ BÁO ({timestamp}) ===\n")
-        f.write(f"Mã: {ticker}\n")
-        rate = rate_today or 25400
-        f.write(f"Đóng cửa ({last_date}): {format_vn(last_close)} VNĐ\n")
-        f.write(f"Rủi ro: {risk_level} ({risk_ratio:.2f}%)\n")
-        f.write(f"XGBoost : {format_vn(xgb_val)} VNĐ {trend(xgb_val, last_close)} | [{format_vn(xgb_lower)} - {format_vn(xgb_upper)}]\n")
-        f.write(f"Transformer: {format_vn(trans_val)} VNĐ {trend(trans_val, last_close)} | [{format_vn(trans_lower)} - {format_vn(trans_upper)}]\n")
+        f.write(f"=== BẢN GHI DỰ BÁO 3 NGÀY ({timestamp}) ===\n")
+        f.write(f"Mã chứng khoán: {ticker}\n")
+        f.write(f"Giá đóng cửa gần nhất ({last_date}): {format_vn(last_close)} VNĐ")
+        if rate_today:
+            f.write(f" (${last_close/rate_today:.2f} USD)")
+        f.write("\n")
+        f.write(f"Rủi ro biến động: {risk_level} (Tỷ lệ: {risk_ratio:.2f}%)\n")
+        if rate_today:
+            f.write(f"Tỷ giá USD/VND quy đổi: 1 USD = {format_vn(rate_today)} VNĐ\n")
+        f.write("Dự báo Hybrid XGBoost:\n")
+        for h in range(3):
+            date_str = next_dates[h] if next_dates else f"T+{h+1}"
+            f.write(f"  ➔ T+{h+1} ({date_str}): {format_vn(xgb_vals[h])} VNĐ")
+            if rate_today:
+                f.write(f" (${xgb_vals[h]/rate_today:.2f} USD)")
+            f.write(f" {trend(xgb_vals[h], last_close)} | Khoảng an toàn: [{format_vn(xgb_lowers[h])} - {format_vn(xgb_uppers[h])}] VNĐ\n")
+        
+        f.write("Dự báo Transformer:\n")
+        for h in range(3):
+            date_str = next_dates[h] if next_dates else f"T+{h+1}"
+            f.write(f"  ➔ T+{h+1} ({date_str}): {format_vn(trans_vals[h])} VNĐ")
+            if rate_today:
+                f.write(f" (${trans_vals[h]/rate_today:.2f} USD)")
+            f.write(f" {trend(trans_vals[h], last_close)} | Khoảng an toàn: [{format_vn(trans_lowers[h])} - {format_vn(trans_uppers[h])}] VNĐ\n")
         f.write("-" * 50 + "\n\n")
 
 
@@ -215,7 +232,7 @@ def main():
             # Đảm bảo thứ tự thời gian và có purge gap
             print(f"🤖 [OOF] TimeSeriesSplit K=5, gap=45 để tạo OOF embeddings...")
             tscv = TimeSeriesSplit(n_splits=5, gap=45)
-            X_train_latent_oof = np.zeros((len(X_train_i), 32))
+            X_train_latent_oof = np.zeros((len(X_train_i), 40))
 
             for fold, (train_idx, val_idx) in enumerate(tscv.split(X_train_i), 1):
                 print(f"   Fold {fold}/5 — train={len(train_idx)}, val={len(val_idx)}")
@@ -226,7 +243,10 @@ def main():
 
                 fold_model = build_transformer(
                     input_shape=(X_train_i.shape[1], X_train_i.shape[2]),
-                    d_model=d_model, dropout_rate=dropout_rate, learning_rate=learning_rate,
+                    d_model=d_model,
+                    num_heads=num_heads,
+                    dropout_rate=dropout_rate,
+                    learning_rate=learning_rate,
                 )
                 fold_cb = [
                     EarlyStopping(monitor='val_loss', patience=12, restore_best_weights=True, verbose=0),
@@ -249,13 +269,16 @@ def main():
             print(f"🤖 [TRAIN] Transformer chính cho {ticker}...")
             transformer_model = build_transformer(
                 input_shape=(X_tr.shape[1], X_tr.shape[2]),
-                d_model=d_model, dropout_rate=dropout_rate, learning_rate=learning_rate,
+                d_model=d_model,
+                num_heads=num_heads,
+                dropout_rate=dropout_rate,
+                learning_rate=learning_rate,
             )
             transformer_model.fit(
                 X_tr,
                 {"output_return": y_tr, "output_spread": y_tr_spread},
                 validation_data=(X_va, {"output_return": y_va, "output_spread": y_va_spread}),
-                epochs=100, batch_size=batch_size, callbacks=callbacks_main, verbose=0,
+                epochs=250, batch_size=batch_size, callbacks=callbacks_main, verbose=2,
             )
         # ── BƯỚC 3: Feature extractor & XGBoost ───────────────────────
         print(f"🔍 [EXTRACT] Trích latent features...")
@@ -282,26 +305,25 @@ def main():
         df_align      = df.iloc[dt.time_steps:].reset_index(drop=True)
         test_start    = split_idx + 45
         test_close_i  = df_align.loc[test_start:, 'close'].values[:len(X_test_i)]
-        y_test_true_i = test_close_i * (1 + y_test_raw_i)
+        y_test_true_i = test_close_i.reshape(-1, 1) * (1 + y_test_raw_i)
 
         X_test_latent  = feature_extractor.predict(X_test_i, verbose=0)
         X_test_today   = X_test_i[:, -1, :]
         X_test_hybrid  = np.concatenate([X_test_latent, X_test_today], axis=1)
 
-        # SỬA: dùng get_return_output() để handle list/tensor nhất quán
-        hybrid_xgb_scaled = xgb_model.predict(X_test_hybrid).reshape(-1, 1)
-        hybrid_xgb_return = dt.target_scaler.inverse_transform(hybrid_xgb_scaled).ravel()
+        hybrid_xgb_scaled = xgb_model.predict(X_test_hybrid)
+        hybrid_xgb_return = dt.target_scaler.inverse_transform(hybrid_xgb_scaled)
 
         # SỬA: sanity check — return > 20%/ngày là scaler sai
         assert np.abs(hybrid_xgb_return).max() < 0.20, \
             f"[SANITY] XGBoost return bất thường: {np.abs(hybrid_xgb_return).max():.4f} — kiểm tra target_scaler!"
 
-        hybrid_xgb_preds = test_close_i * (1 + hybrid_xgb_return)
+        hybrid_xgb_preds = test_close_i.reshape(-1, 1) * (1 + hybrid_xgb_return)
 
         trans_pred_raw   = transformer_model.predict(X_test_i, verbose=0)
         trans_pred_clean = get_return_output(trans_pred_raw)
-        trans_return     = dt.target_scaler.inverse_transform(trans_pred_clean).ravel()
-        trans_preds      = test_close_i * (1 + trans_return)
+        trans_return     = dt.target_scaler.inverse_transform(trans_pred_clean)
+        trans_preds      = test_close_i.reshape(-1, 1) * (1 + trans_return)
 
         print(f"\n📊 KẾT QUẢ — {ticker}")
         evaluate_predictions(y_test_true_i, hybrid_xgb_preds, f"Hybrid XGBoost ({ticker})", ticker)
@@ -309,10 +331,10 @@ def main():
 
         # ── Biểu đồ ──────────────────────────────────────────────────
         plt.figure(figsize=(15, 7))
-        plt.plot(y_test_true_i[-100:], label="Giá thực tế", color='black', linewidth=2.5)
-        plt.plot(hybrid_xgb_preds[-100:], label="Hybrid XGBoost", color='red', linestyle='--')
-        plt.plot(trans_preds[-100:],      label="Transformer",    color='blue', linestyle='-.')
-        plt.title(f"{ticker} — 100 phiên cuối tập Test", fontsize=14, fontweight='bold')
+        plt.plot(y_test_true_i[-100:, 2], label="Giá thực tế (T+3)", color='black', linewidth=2.5)
+        plt.plot(hybrid_xgb_preds[-100:, 2], label="Hybrid XGBoost (T+3)", color='red', linestyle='--')
+        plt.plot(trans_preds[-100:, 2],      label="Transformer (T+3)",    color='blue', linestyle='-.')
+        plt.title(f"{ticker} — 100 phiên cuối tập Test (Dự báo T+3)", fontsize=14, fontweight='bold')
         plt.xlabel("Phiên"); plt.ylabel("Giá (VNĐ)")
         plt.legend(); plt.grid(True, alpha=0.3)
         os.makedirs(results_dir, exist_ok=True)
@@ -379,7 +401,7 @@ def main():
         # Thêm macro vĩ mô
         raw_df = raw_df.reset_index()
         raw_df.columns = [c.lower() for c in raw_df.columns]
-        raw_df['date'] = pd.to_datetime(raw_df['date'])
+        raw_df['date'] = pd.to_datetime(raw_df['date']).dt.tz_localize(None)
 
         start_live = raw_df['date'].min().strftime('%Y-%m-%d')
         end_live   = (raw_df['date'].max() + pd.Timedelta(days=1)).strftime('%Y-%m-%d')
@@ -393,7 +415,7 @@ def main():
                     tmp.columns = [str(c[0]).lower() for c in tmp.columns]
                 else:
                     tmp.columns = [str(c).lower() for c in tmp.columns]
-                tmp['date'] = pd.to_datetime(tmp['date'])
+                tmp['date'] = pd.to_datetime(tmp['date']).dt.tz_localize(None)
                 tmp[col] = tmp['close'].pct_change() if pct else tmp['close']
                 return tmp[['date', col]]
             except Exception:
@@ -465,20 +487,27 @@ def main():
         X_pred_today   = X_predict[0, -1, :].reshape(1, -1)
         X_pred_hybrid  = np.concatenate([X_pred_latent, X_pred_today], axis=1)
 
-        xgb_pred_scaled   = xgb_model.predict(X_pred_hybrid).reshape(-1, 1)
-        xgb_return_future = dt.target_scaler.inverse_transform(xgb_pred_scaled)[0][0]
+        xgb_pred_scaled   = xgb_model.predict(X_pred_hybrid)
+        xgb_return_future = dt.target_scaler.inverse_transform(xgb_pred_scaled)[0]
 
         trans_pred_live  = transformer_model.predict(X_predict, verbose=0)
         trans_pred_clean = get_return_output(trans_pred_live)
-        trans_return_future = dt.target_scaler.inverse_transform(trans_pred_clean)[0][0]
+        trans_return_future = dt.target_scaler.inverse_transform(trans_pred_clean)[0]
 
         last_close = float(raw_df['close'].dropna().iloc[-1])
         last_date  = raw_df.index[-1].strftime('%Y-%m-%d')
 
-        xgb_val   = last_close * (1 + xgb_return_future)
-        trans_val = last_close * (1 + trans_return_future)
+        next_dates = []
+        curr_date = pd.to_datetime(last_date)
+        for h in [1, 2, 3]:
+            curr_date = curr_date + pd.tseries.offsets.BDay(1)
+            next_dates.append(curr_date.strftime('%Y-%m-%d'))
 
-        last_atr   = raw_df_reset['high'].iloc[-14:].values - raw_df_reset['low'].iloc[-14:].values
+        xgb_vals   = last_close * (1 + xgb_return_future)
+        trans_vals = last_close * (1 + trans_return_future)
+
+        valid_raw  = raw_df_reset[['high', 'low']].dropna()
+        last_atr   = valid_raw['high'].iloc[-14:].values - valid_raw['low'].iloc[-14:].values
         atr_approx = float(np.mean(np.abs(last_atr))) if len(last_atr) > 0 else last_close * 0.02
         risk_ratio = (atr_approx / last_close) * 100
         risk_level = (
@@ -487,8 +516,8 @@ def main():
             "Cao 🔴 [CẢNH BÁO]"
         )
 
-        xgb_lower, xgb_upper   = xgb_val - 1.5 * atr_approx, xgb_val + 1.5 * atr_approx
-        trans_lower, trans_upper = trans_val - 1.5 * atr_approx, trans_val + 1.5 * atr_approx
+        xgb_lowers, xgb_uppers   = xgb_vals - 1.5 * atr_approx, xgb_vals + 1.5 * atr_approx
+        trans_lowers, trans_uppers = trans_vals - 1.5 * atr_approx, trans_vals + 1.5 * atr_approx
 
         def trend_str(val):
             pct = (val - last_close) / last_close * 100
@@ -496,13 +525,17 @@ def main():
 
         print(f"  💵 Close ({last_date}): {format_vn(last_close)} VNĐ")
         print(f"  ⚠️  Rủi ro: {risk_level} ({risk_ratio:.2f}%)")
-        print(f"  🌳 XGBoost   : {format_vn(xgb_val)} | {trend_str(xgb_val)}")
-        print(f"  🤖 Transformer: {format_vn(trans_val)} | {trend_str(trans_val)}")
+        print("  🌳 Hybrid XGBoost (Chuỗi 3 ngày):")
+        for h in range(3):
+            print(f"     ➔ T+{h+1} ({next_dates[h]}): {format_vn(xgb_vals[h])} VNĐ | {trend_str(xgb_vals[h])}")
+        print("  🤖 Transformer (Chuỗi 3 ngày):")
+        for h in range(3):
+            print(f"     ➔ T+{h+1} ({next_dates[h]}): {format_vn(trans_vals[h])} VNĐ | {trend_str(trans_vals[h])}")
 
         log_prediction_to_file(
             ticker, last_date, last_close, risk_level, risk_ratio,
-            xgb_val, xgb_lower, xgb_upper, trans_val, trans_lower, trans_upper,
-            usd_vnd_rate,
+            xgb_vals, xgb_lowers, xgb_uppers, trans_vals, trans_lowers, trans_uppers,
+            usd_vnd_rate, next_dates
         )
 
         print(f"\n{'─'*55}")

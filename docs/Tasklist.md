@@ -4,7 +4,7 @@ File file này giúp bạn theo dõi các đầu việc cần làm để xây d�
 
 > [!IMPORTANT]
 > **Trọng tâm hiện tại (Active Focus):** Tập trung tối ưu hóa và huấn luyện riêng biệt mô hình **Transformer** trước. Chỉ khi mô hình Transformer đạt độ chính xác cao nhất và biểu đồ Loss hội tụ hoàn hảo, chúng ta mới bắt đầu trích xuất đặc trưng để huấn luyện XGBoost.
-> * Lệnh chạy huấn luyện riêng Transformer: `python scripts/run_training_transformer.py`
+> * Lệnh chạy huấn luyện: `python scripts/run_training.py <TICKER>`
 
 ---
 
@@ -93,6 +93,6 @@ y_pred = xgb_model.predict(X_test_hybrid)
 ---
 
 ## ⚙️ Giai đoạn 5: Tối ưu hóa lõi AI chuyên sâu (Chuẩn bị thực hiện)
-- [ ] **5.1.** Đồng bộ bộ lọc Kalman Filter vào tệp chuẩn bị dữ liệu huấn luyện (`src/data_loader.py`).
-- [ ] **5.2.** Cấu hình tìm kiếm siêu tham số (Optuna Tuning) độc lập cho mỗi mã cổ phiếu trong `scripts/run_tuning.py` thay vì dùng chung cấu hình của META.
-- [ ] **5.3.** Phát triển module Backtesting mô phỏng giao dịch thực tế trên tập Test để đo hiệu suất lợi nhuận đầu tư và các hệ số tài chính (Sharpe, Drawdown).
+- [x] **5.1.** Đồng bộ bộ lọc Kalman Filter vào tệp chuẩn bị dữ liệu huấn luyện (`src/data_loader.py`).
+- [x] **5.2.** Cấu hình tìm kiếm siêu tham số (Optuna Tuning) độc lập cho mỗi mã cổ phiếu trong `scripts/run_tuning.py` thay vì dùng chung cấu hình của META.
+- [x] **5.3.** Phát triển module Backtesting mô phỏng giao dịch thực tế trên tập Test để đo hiệu suất lợi nhuận đầu tư và các hệ số tài chính (Sharpe, Drawdown).

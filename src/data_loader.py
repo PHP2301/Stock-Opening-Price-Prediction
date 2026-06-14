@@ -1,8 +1,19 @@
 import os
+import sys
 import pandas as pd
 import pandas_ta as ta
 import yfinance as yf
 import numpy as np
+
+# Configure UTF-8 for console output to avoid Windows charmap encoding issues
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8')
+try:
+    from src.dividend_fetcher import fetch_dividends
+except ImportError:
+    from dividend_fetcher import fetch_dividends
 # data_loader.py — ĐÃ SỬA CÁC LỖI:
 # 1. Bỏ DataTransformer() nội bộ cuối hàm fetch_and_prepare_data()
 #    → hàm giờ chỉ trả df với raw price + macro, KHÔNG tự tính 34 features
@@ -46,9 +57,9 @@ def calculate_days_before_tet(dates_series):
 def get_realtime_usd_vnd_rate():
     try:
         ticker = yf.Ticker("USDVND=X")
-        df = ticker.history(period="1d")
+        df = ticker.history(period="5d")
         if not df.empty:
-            rate = float(df['Close'].iloc[-1])
+            rate = float(df['Close'].dropna().iloc[-1])
             if rate < 1000.0:
                 rate *= 1000.0
             if 15000.0 <= rate <= 28000.0:
@@ -80,6 +91,54 @@ def _clean_usdvnd(df_rate, fallback_rate):
     ] = np.nan
     df_rate['rate_close'] = df_rate['rate_close'].ffill().bfill().fillna(fallback_rate)
     return df_rate
+
+
+def calculate_dividend_features(df, df_divs):
+    # Khởi tạo mặc định
+    df['dividend_flag'] = 0.0
+    df['days_to_dividend'] = 60.0
+    df['days_after_dividend'] = 60.0
+    
+    if df_divs is None or df_divs.empty:
+        return df
+        
+    div_dates = pd.to_datetime(df_divs['date']).dt.normalize().tolist()
+    trading_dates = pd.to_datetime(df['date']).dt.normalize().tolist()
+    
+    div_trading_indices = []
+    for div_date in div_dates:
+        future_trades = [i for i, d in enumerate(trading_dates) if d >= div_date]
+        if future_trades:
+            idx = future_trades[0]
+            div_trading_indices.append(idx)
+            if abs((trading_dates[idx] - div_date).days) <= 3:
+                df.loc[idx, 'dividend_flag'] = 1.0
+                
+    if not div_trading_indices:
+        return df
+        
+    div_trading_indices = sorted(list(set(div_trading_indices)))
+    
+    days_to = []
+    days_after = []
+    
+    n_days = len(trading_dates)
+    for i in range(n_days):
+        next_div_indices = [j for j in div_trading_indices if j >= i]
+        if next_div_indices:
+            days_to.append(float(min(next_div_indices[0] - i, 60)))
+        else:
+            days_to.append(60.0)
+            
+        prev_div_indices = [j for j in div_trading_indices if j <= i]
+        if prev_div_indices:
+            days_after.append(float(min(i - prev_div_indices[-1], 60)))
+        else:
+            days_after.append(60.0)
+            
+    df['days_to_dividend'] = days_to
+    df['days_after_dividend'] = days_after
+    return df
 
 
 def fetch_and_prepare_data(
@@ -342,16 +401,30 @@ def fetch_and_prepare_data(
     df['sentiment_score'] = df['sentiment_score'].fillna(0.0)
     df['news_volume']     = df['news_volume'].fillna(0.0)
 
+    # Tính đặc trưng cổ tức
+    try:
+        df_divs = fetch_dividends(ticker, start_date, end_date)
+        df = calculate_dividend_features(df, df_divs)
+    except Exception as e:
+        print(f"  [WARNING] Lỗi tính đặc trưng cổ tức: {e}")
+        df['dividend_flag'] = 0.0
+        df['days_to_dividend'] = 60.0
+        df['days_after_dividend'] = 60.0
+
     # Target
-    df['target_return'] = (df['close'].shift(-3) - df['open']) / df['open']
-    df['target_spread'] = (df['high'].shift(-1) - df['low'].shift(-1)) / df['close']
+    for h in [1, 2, 3]:
+        df[f'target_return_{h}d'] = (df['close'].shift(-h) - df['close']) / df['close']
+        df[f'target_spread_{h}d'] = (df['high'].shift(-h) - df['low'].shift(-h)) / df['close']
 
     # === SỬA: KHÔNG còn tạo DataTransformer() nội bộ ở đây ===
     # Trước: transformer = DataTransformer(); df_feats = transformer.transform_df(df)
     # → gây double-transform và scaler leak
     # Sau: caller tự gọi transformer.fit_transform_train_only(df)
 
-    df_cleaned = df.dropna().reset_index(drop=True)
+    # Drop rows where features are NaN (excluding target columns)
+    target_cols = [c for c in df.columns if 'target_' in c]
+    feature_cols = [c for c in df.columns if c not in target_cols]
+    df_cleaned = df.dropna(subset=feature_cols).reset_index(drop=True)
 
     os.makedirs(data_dir, exist_ok=True)
     cache_path = os.path.join(data_dir, f"{ticker}_processed.csv")

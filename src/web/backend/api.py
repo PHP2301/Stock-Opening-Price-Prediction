@@ -1,6 +1,13 @@
 import os
 import sys
 import datetime
+import json
+
+# Configure UTF-8 for console output to avoid Windows charmap encoding issues
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8')
 from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -90,7 +97,10 @@ def get_predictions(ticker: str, limit: int = 10, db: Session = Depends(get_db))
             "trans_upper": p.trans_upper,
             "risk_level": p.risk_level,
             "usd_vnd_rate": p.usd_vnd_rate,
-            "actual_open_price": p.actual_open_price
+            "actual_open_price": p.actual_open_price,
+            "xgb_predicted_prices": json.loads(p.xgb_predicted_prices_json) if p.xgb_predicted_prices_json else None,
+            "trans_predicted_prices": json.loads(p.trans_predicted_prices_json) if p.trans_predicted_prices_json else None,
+            "agent_decision": json.loads(p.agent_decision_json) if p.agent_decision_json else None
         } for p in preds
     ]
 
@@ -159,13 +169,13 @@ def trigger_prediction(ticker: str, db: Session = Depends(get_db)):
         if df.empty:
             raise HTTPException(status_code=500, detail="Không thể tải và chuẩn bị dữ liệu giao dịch mới nhất")
             
-        # Tính toán chỉ báo ATR 14 để đo lường rủi ro và vẽ khoảng an toàn
-        df['atr_14'] = ta.atr(df['high'], df['low'], df['close'], length=14)
-        
         transformer = DataTransformer(time_steps=LOOKBACK_WINDOW)
         df = df.sort_values('date').reset_index(drop=True)
+        df['atr_14'] = ta.atr(df['high'], df['low'], df['close'], length=14)
         
-        recent_features = df[transformer.feature_cols].tail(LOOKBACK_WINDOW)
+        # Calculate 34 features using transform_df
+        df_transformed = transformer.transform_df(df)
+        recent_features = df_transformed[transformer.feature_cols].tail(LOOKBACK_WINDOW)
         if len(recent_features) < LOOKBACK_WINDOW:
             raise HTTPException(status_code=500, detail=f"Không đủ dữ liệu {LOOKBACK_WINDOW} ngày để tạo đặc trưng")
             
@@ -179,7 +189,7 @@ def trigger_prediction(ticker: str, db: Session = Depends(get_db)):
         # Gọi mô hình với dữ liệu để khởi tạo thuộc tính input/output của đồ thị Functional
         _ = transformer_model(X_predict)
         
-        # Trích xuất đặc trưng lai (32 chiều ẩn từ Transformer + 34 chiều chỉ báo ngày hiện tại) cho mô hình Hybrid XGBoost
+        # Trích xuất đặc trưng lai (40 chiều ẩn từ Transformer + 42 chiều chỉ báo ngày hiện tại) cho mô hình Hybrid XGBoost
         feature_extractor = tf.keras.models.Model(
             inputs=transformer_model.input,
             outputs=transformer_model.get_layer("latent_embedding").output
@@ -187,26 +197,31 @@ def trigger_prediction(ticker: str, db: Session = Depends(get_db)):
         X_predict_latent = feature_extractor.predict(X_predict, verbose=0)
         X_predict_today = X_predict[0, -1, :].reshape(1, -1)
         X_predict_hybrid = np.concatenate([X_predict_latent, X_predict_today], axis=1)
-
         
-        xgb_pred_scaled = xgb_model.predict(X_predict_hybrid).reshape(-1, 1)
-        xgb_return_future = scaler_y.inverse_transform(xgb_pred_scaled)[0][0]
+        # Dự đoán từ XGBoost Hybrid
+        xgb_pred_scaled = xgb_model.predict(X_predict_hybrid)
+        xgb_return_future = scaler_y.inverse_transform(xgb_pred_scaled)[0]
         
-        trans_pred_output = transformer_model.predict(X_predict, verbose=0)
-        trans_scaled = trans_pred_output[0] if isinstance(trans_pred_output, list) else trans_pred_output
-        trans_return_future = scaler_y.inverse_transform(trans_scaled)[0][0]
-
+        # Dự đoán từ Transformer
+        trans_pred_raw = transformer_model.predict(X_predict, verbose=0)
+        trans_pred_clean = trans_pred_raw[0] if isinstance(trans_pred_raw, (list, tuple)) else trans_pred_raw
+        trans_return_future = scaler_y.inverse_transform(trans_pred_clean)[0]
         
         last_close = float(raw_df['close'].iloc[-1])
         last_date_str = raw_df.index[-1].strftime('%Y-%m-%d')
-        target_date_str = (raw_df.index[-1] + datetime.timedelta(days=1)).strftime('%Y-%m-%d')
-
         
-        xgb_val = float(last_close * (1 + xgb_return_future))
-        trans_val = float(last_close * (1 + trans_return_future))
+        next_dates = []
+        curr_date = pd.to_datetime(last_date_str)
+        for h in [1, 2, 3]:
+            curr_date = curr_date + pd.tseries.offsets.BDay(1)
+            next_dates.append(curr_date.strftime('%Y-%m-%d'))
+            
+        xgb_vals = last_close * (1 + xgb_return_future)
+        trans_vals = last_close * (1 + trans_return_future)
         
         last_atr = float(raw_df['atr_14'].iloc[-1])
         risk_ratio = (last_atr / last_close) * 100
+        
         if risk_ratio < 1.5:
             risk_level = "Thấp 🟢"
         elif risk_ratio < 3.0:
@@ -214,12 +229,58 @@ def trigger_prediction(ticker: str, db: Session = Depends(get_db)):
         else:
             risk_level = "Cao 🔴"
             
-        xgb_lower = float(xgb_val - 1.5 * last_atr)
-        xgb_upper = float(xgb_val + 1.5 * last_atr)
-        trans_lower = float(trans_val - 1.5 * last_atr)
-        trans_upper = float(trans_val + 1.5 * last_atr)
+        xgb_lower = float(xgb_vals[0] - 1.5 * last_atr)
+        xgb_upper = float(xgb_vals[0] + 1.5 * last_atr)
+        trans_lower = float(trans_vals[0] - 1.5 * last_atr)
+        trans_upper = float(trans_vals[0] + 1.5 * last_atr)
 
+        # Trích xuất các đặc trưng chỉ báo để cung cấp cho Agents (dùng dữ liệu chưa chuẩn hóa)
+        rsi_14 = float(df_transformed['rsi_14'].iloc[-1])
+        macd_ratio = float(df_transformed['macd_ratio'].iloc[-1])
+        bb_position = float(df_transformed['bb_position'].iloc[-1])
+        mfi_14 = float(df_transformed['mfi_14'].iloc[-1])
+        vix_lag1 = float(df_transformed['vix_lag1'].iloc[-1])
+        bond_yield_lag1 = float(df_transformed['bond_yield_lag1'].iloc[-1])
+        usdvnd_change = float(df_transformed['usdvnd_change'].iloc[-1])
+        vnindex_return_lag1 = float(df_transformed['vnindex_return_lag1'].iloc[-1])
+        news_sentiment_score = float(df['sentiment_score'].iloc[-1]) if 'sentiment_score' in df.columns else 0.0
+
+        # Import và thực thi các Agent
+        from src.agents.technical_agent import TechnicalAgent
+        from src.agents.sentiment_agent import SentimentAgent
+        from src.agents.macro_agent import MacroAgent
+        from src.agents.risk_agent import RiskAgent
+        from src.agents.orchestrator import Orchestrator
+
+        tech_agent = TechnicalAgent()
+        sent_agent = SentimentAgent()
+        macro_agent = MacroAgent()
+        risk_agent = RiskAgent()
+        orchestrator = Orchestrator()
+
+        tech_rep = tech_agent.analyze(stock.ticker, trans_return_future, xgb_return_future, rsi_14, macd_ratio, bb_position)
+        sent_rep = sent_agent.analyze(stock.ticker, news_sentiment_score)
+        macro_rep = macro_agent.analyze(stock.ticker, vix_lag1, bond_yield_lag1, usdvnd_change, vnindex_return_lag1)
+        risk_rep = risk_agent.analyze(stock.ticker, last_close, last_atr, mfi_14)
+
+        decision = orchestrator.run_debate(stock.ticker, last_close, tech_rep, sent_rep, macro_rep, risk_rep)
+
+        # Cấu trúc hóa JSON lưu DB và trả về
+        xgb_prices_list = [float(v) for v in xgb_vals]
+        trans_prices_list = [float(v) for v in trans_vals]
+        decision_dict = {
+            "action": decision.action,
+            "confidence_score": float(decision.confidence_score),
+            "stop_loss": float(decision.stop_loss) if decision.stop_loss else None,
+            "take_profit": float(decision.take_profit) if decision.take_profit else None,
+            "reasoning": decision.reasoning,
+            "debate_summary": decision.debate_summary
+        }
         
+        xgb_prices_json = json.dumps(xgb_prices_list)
+        trans_prices_json = json.dumps(trans_prices_list)
+        agent_decision_json = json.dumps(decision_dict)
+
         # Save historical price record to database
         db_price = db.query(StockPrice).filter(StockPrice.stock_id == stock.id, StockPrice.date == last_date_str).first()
         if not db_price:
@@ -241,28 +302,34 @@ def trigger_prediction(ticker: str, db: Session = Depends(get_db)):
         ).first()
         
         if db_pred:
-            db_pred.target_date = target_date_str
-            db_pred.xgb_predicted_price = xgb_val
+            db_pred.target_date = next_dates[0]
+            db_pred.xgb_predicted_price = float(xgb_vals[0])
             db_pred.xgb_lower = xgb_lower
             db_pred.xgb_upper = xgb_upper
-            db_pred.trans_predicted_price = trans_val
+            db_pred.trans_predicted_price = float(trans_vals[0])
             db_pred.trans_lower = trans_lower
             db_pred.trans_upper = trans_upper
             db_pred.risk_level = risk_level
             db_pred.usd_vnd_rate = usd_vnd_rate
+            db_pred.xgb_predicted_prices_json = xgb_prices_json
+            db_pred.trans_predicted_prices_json = trans_prices_json
+            db_pred.agent_decision_json = agent_decision_json
         else:
             db_pred = PredictionRecord(
                 stock_id=stock.id,
                 prediction_date=last_date_str,
-                target_date=target_date_str,
-                xgb_predicted_price=xgb_val,
+                target_date=next_dates[0],
+                xgb_predicted_price=float(xgb_vals[0]),
                 xgb_lower=xgb_lower,
                 xgb_upper=xgb_upper,
-                trans_predicted_price=trans_val,
+                trans_predicted_price=float(trans_vals[0]),
                 trans_lower=trans_lower,
                 trans_upper=trans_upper,
                 risk_level=risk_level,
-                usd_vnd_rate=usd_vnd_rate
+                usd_vnd_rate=usd_vnd_rate,
+                xgb_predicted_prices_json=xgb_prices_json,
+                trans_predicted_prices_json=trans_prices_json,
+                agent_decision_json=agent_decision_json
             )
             db.add(db_pred)
             
@@ -271,20 +338,25 @@ def trigger_prediction(ticker: str, db: Session = Depends(get_db)):
         return {
             "ticker": stock.ticker,
             "prediction_date": last_date_str,
-            "target_date": target_date_str,
+            "target_date": next_dates[0],
             "last_close": last_close,
-            "xgb_predicted_price": xgb_val,
+            "xgb_predicted_price": float(xgb_vals[0]),
             "xgb_lower": xgb_lower,
             "xgb_upper": xgb_upper,
-            "trans_predicted_price": trans_val,
+            "trans_predicted_price": float(trans_vals[0]),
             "trans_lower": trans_lower,
             "trans_upper": trans_upper,
             "risk_level": risk_level,
-            "usd_vnd_rate": usd_vnd_rate
+            "usd_vnd_rate": usd_vnd_rate,
+            "xgb_predicted_prices": xgb_prices_list,
+            "trans_predicted_prices": trans_prices_list,
+            "agent_decision": decision_dict
         }
         
     except Exception as e:
         db.rollback()
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Lỗi khi chạy dự báo: {str(e)}")
 
 # Mount static frontend files

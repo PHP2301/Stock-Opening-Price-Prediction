@@ -80,7 +80,7 @@ def objective(trial):
     model = build_transformer(
         input_shape=(_X_train.shape[1], _X_train.shape[2]),
         d_model=d_model,
-        heads=num_heads,  # SỬA: Đổi từ num_heads thành heads để tương thích với build_transformer
+        num_heads=num_heads,
         dropout_rate=dropout_rate,
         learning_rate=learning_rate,
         multi_task=True,
