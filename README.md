@@ -105,7 +105,7 @@ graph TD
     A[Yahoo Finance + DNSE API] --> B[Tải tỷ giá USD/VND trực tuyến]
     B --> C[Bộ lọc tỷ giá 3 lớp]
     C --> D[Quy đổi USD sang VND theo tỷ giá động]
-    D --> E[Timezone Sync: shift(1) dữ liệu Mỹ cho mã Việt Nam]
+    D --> E["Timezone Sync: shift(1) dữ liệu Mỹ cho mã Việt Nam"]
     E --> F[Feature Engineering: 42 đặc trưng kỹ thuật, vĩ mô, cổ tức & dòng tiền]
     F --> G[Lọc nhiễu Kalman Filter]
     G --> H[StandardScaler + Sliding Window 45 ngày]
