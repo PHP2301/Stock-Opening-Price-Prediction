@@ -413,7 +413,7 @@ def run_prediction_for_ticker(ticker):
                 f"💬 <b>Lập luận:</b>\n"
                 f"<i>{decision.reasoning}</i>"
             )
-            if is_strong_volatility:
+            if is_strong_volatility or ticker == "VNM.VN":
                 send_telegram_message(telegram_msg)
             else:
                 print(f"ℹ️ [Telegram] Biến động bình thường ({risk_ratio:.2f}%), không gửi thông báo Telegram.")
