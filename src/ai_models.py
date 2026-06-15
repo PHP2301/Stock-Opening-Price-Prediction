@@ -2,6 +2,32 @@ import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 import numpy as np
 import tensorflow as tf
+
+# Monkeypatch Lambda layer shape inference to fix Keras 3 deserialization shape issues
+original_lambda_compute_shape = tf.keras.layers.Lambda.compute_output_shape
+
+def patched_lambda_compute_shape(self, input_shape):
+    if isinstance(input_shape, list) and len(input_shape) == 1:
+        shape_to_use = input_shape[0]
+    else:
+        shape_to_use = input_shape
+        
+    name = getattr(self, "name", "")
+    if name == "slice_price":
+        return (shape_to_use[0], shape_to_use[1], 12)
+    elif name == "slice_volume":
+        return (shape_to_use[0], shape_to_use[1], 6)
+    elif name == "slice_tech":
+        return (shape_to_use[0], shape_to_use[1], 16)
+    elif name == "slice_flow_div":
+        return (shape_to_use[0], shape_to_use[1], 8)
+        
+    try:
+        return original_lambda_compute_shape(self, input_shape)
+    except Exception:
+        return (shape_to_use[0], shape_to_use[1], None)
+
+tf.keras.layers.Lambda.compute_output_shape = patched_lambda_compute_shape
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import (
     Dense, Dropout, Input, LayerNormalization,
@@ -295,10 +321,10 @@ def build_transformer(input_shape, d_model=128, num_heads=8, key_dim=16, dropout
     """
     inputs = Input(shape=input_shape)
 
-    x_price  = tf.keras.layers.Lambda(lambda x: x[:, :,  0:12], name="slice_price")(inputs)
-    x_volume = tf.keras.layers.Lambda(lambda x: x[:, :, 12:18], name="slice_volume")(inputs)
-    x_tech   = tf.keras.layers.Lambda(lambda x: x[:, :, 18:34], name="slice_tech")(inputs)
-    x_flow_div = tf.keras.layers.Lambda(lambda x: x[:, :, 34:42], name="slice_flow_div")(inputs)
+    x_price  = tf.keras.layers.Lambda(lambda x: x[:, :,  0:12], output_shape=lambda s: (s[0], s[1], 12), name="slice_price")(inputs)
+    x_volume = tf.keras.layers.Lambda(lambda x: x[:, :, 12:18], output_shape=lambda s: (s[0], s[1], 6), name="slice_volume")(inputs)
+    x_tech   = tf.keras.layers.Lambda(lambda x: x[:, :, 18:34], output_shape=lambda s: (s[0], s[1], 16), name="slice_tech")(inputs)
+    x_flow_div = tf.keras.layers.Lambda(lambda x: x[:, :, 34:42], output_shape=lambda s: (s[0], s[1], 8), name="slice_flow_div")(inputs)
 
     def branch(x, filters, num_heads_branch, key_dim_branch, gru_units, latent_dim, name):
         x = Conv1D(filters, 3, padding='same', activation='relu',
