@@ -220,3 +220,5 @@ __marimo__/
 # Scratch directory
 scratch/
 
+# Docs directory (except mkdocs config if any, but ignore all docs files)
+docs/
