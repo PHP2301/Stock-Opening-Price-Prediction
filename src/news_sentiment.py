@@ -34,6 +34,42 @@ _PROJECT_ROOT = os.path.abspath(os.path.join(_MODULE_DIR, '..'))
 _DATA_DIR    = os.path.join(_PROJECT_ROOT, 'data')
 
 
+def safe_translate_batch(texts, source='auto', target='en'):
+    if not texts:
+        return []
+    try:
+        from deep_translator import GoogleTranslator
+        translator = GoogleTranslator(source=source, target=target)
+        results = []
+        batch_size = 10
+        for i in range(0, len(texts), batch_size):
+            chunk = texts[i:i+batch_size]
+            chunk_translated = None
+            for attempt in range(2):
+                try:
+                    chunk_translated = translator.translate_batch(chunk)
+                    if chunk_translated:
+                        results.extend(chunk_translated)
+                        break
+                except Exception:
+                    if attempt == 1:
+                        results.extend(chunk)
+                    else:
+                        import time
+                        time.sleep(0.5)
+            if not chunk_translated:
+                results.extend(chunk)
+    except Exception:
+        results = list(texts)
+
+    # Đảm bảo độ dài khớp chính xác
+    if len(results) < len(texts):
+        results.extend(texts[len(results):])
+    elif len(results) > len(texts):
+        results = results[:len(texts)]
+    return results
+
+
 class SentimentAnalyzer:
     def __init__(self, engine='vader'):
         self.engine    = engine.lower()
@@ -88,7 +124,8 @@ def fetch_latest_news(ticker):
             dt_str = (datetime.now() - timedelta(days=offset)).strftime('%Y-%m-%d')
             news_list.append({
                 'date': dt_str,
-                'title': "BREAKING: Meta platforms face severe global outage affecting Instagram, Facebook, and WhatsApp, causing massive ad revenue loss and user backlash"
+                'title': "BREAKING: Meta platforms face severe global outage affecting Instagram, Facebook, and WhatsApp, causing massive ad revenue loss and user backlash",
+                'title_vi': "TIN NÓNG: Các nền tảng Meta đối mặt với sự cố sập toàn cầu nghiêm trọng ảnh hưởng đến Instagram, Facebook và WhatsApp, gây sụt giảm doanh thu quảng cáo lớn và làn sóng phản đối từ người dùng"
             })
         print(f"  [BREAKING] Injected breaking news for META: Global platform outage!")
 
@@ -97,21 +134,33 @@ def fetch_latest_news(ticker):
         yfticker = yf.Ticker(ticker)
         yf_news  = yfticker.news
         if yf_news:
+            titles_to_translate = []
+            valid_items = []
             for item in yf_news:
                 title    = item.get('title', '')
                 pub_time = item.get('providerPublishTime', 0)
                 if title and pub_time:
                     dt = datetime.fromtimestamp(pub_time)
-                    news_list.append({'date': dt.strftime('%Y-%m-%d'), 'title': title})
+                    titles_to_translate.append(title)
+                    valid_items.append({'date': dt.strftime('%Y-%m-%d'), 'title': title})
+            
+            if titles_to_translate:
+                vi_titles = safe_translate_batch(titles_to_translate, source='auto', target='vi')
+                for item, vi_t in zip(valid_items, vi_titles):
+                    item['title_vi'] = vi_t
+                    news_list.append(item)
     except Exception as e:
         print(f"  [NEWS] yfinance news lỗi cho {ticker}: {e}")
 
     # CafeF Vietnamese news
     ticker_upper = ticker.upper()
     keywords = []
-    if "VNM"  in ticker_upper: keywords = ["VNM", "Vinamilk"]
-    elif "GOOGL" in ticker_upper: keywords = ["GOOGL", "Google", "Alphabet"]
-    elif "META"  in ticker_upper: keywords = ["META", "Facebook"]
+    if "VNM"  in ticker_upper: 
+        keywords = ["VNM", "Vinamilk", "VLC", "Vilico", "MCM", "Mộc Châu Milk", "Mai Kiều Liên"]
+    elif "GOOGL" in ticker_upper: 
+        keywords = ["GOOGL", "Google", "Alphabet", "Sundar Pichai", "DeepMind", "Waymo"]
+    elif "META"  in ticker_upper: 
+        keywords = ["META", "Facebook", "Instagram", "WhatsApp", "Mark Zuckerberg", "Zuckerberg"]
 
     if keywords:
         try:
@@ -122,13 +171,27 @@ def fetch_latest_news(ticker):
 
             for kw in keywords:
                 try:
-                    encoded_kw = urllib.parse.quote(kw)
-                    search_url = f"https://cafef.vn/tim-kiem.chn?keywords={encoded_kw}"
-                    req = urllib.request.Request(
-                        search_url, headers={'User-Agent': 'Mozilla/5.0'}
-                    )
-                    with urllib.request.urlopen(req, timeout=5) as response:
-                        html = response.read()
+                    html = None
+                    for attempt in range(3):
+                        try:
+                            encoded_kw = urllib.parse.quote(kw)
+                            search_url = f"https://cafef.vn/tim-kiem.chn?keywords={encoded_kw}"
+                            req = urllib.request.Request(
+                                search_url, headers={'User-Agent': 'Mozilla/5.0'}
+                            )
+                            with urllib.request.urlopen(req, timeout=5) as response:
+                                html = response.read()
+                            if html and len(html) > 5000:
+                                break
+                        except Exception:
+                            if attempt == 2:
+                                raise
+                            import time
+                            time.sleep(0.5)
+
+                    if not html:
+                        continue
+
                     soup = BeautifulSoup(html, 'html.parser')
                     for a_tag in soup.find_all('a', href=True):
                         href     = a_tag.get('href', '')
@@ -145,6 +208,8 @@ def fetch_latest_news(ticker):
                             seen_urls.add(href)
                 except Exception as e:
                     print(f"  [NEWS] CafeF search lỗi cho '{kw}': {e}")
+                import time
+                time.sleep(1.0)
 
             # RSS fallback
             for rss_url in ["https://cafef.vn/thi-truong-chung-khoan.rss",
@@ -173,13 +238,9 @@ def fetch_latest_news(ticker):
                     pass
 
             if vi_titles:
-                try:
-                    en_titles = translator.translate_batch(vi_titles)
-                    for d, t in zip(dates_vn, en_titles):
-                        news_list.append({'date': d, 'title': f"[VN] {t}"})
-                except Exception as e:
-                    for d, t in zip(dates_vn, vi_titles):
-                        news_list.append({'date': d, 'title': f"[VN-Raw] {t}"})
+                en_titles = safe_translate_batch(vi_titles, source='vi', target='en')
+                for d, t, t_vi in zip(dates_vn, en_titles, vi_titles):
+                    news_list.append({'date': d, 'title': f"[VN] {t}", 'title_vi': t_vi})
         except Exception as e:
             print(f"  [NEWS] Không tích hợp tin tức VN: {e}")
 

@@ -70,8 +70,8 @@ def run_prediction_for_ticker(ticker):
         
     print(f"⏳ Đang tải và chuẩn bị dữ liệu mới nhất cho {ticker}...")
     try:
-        # Tải dữ liệu để tạo đặc trưng
-        start_date = (datetime.datetime.now() - datetime.timedelta(days=180)).strftime("%Y-%m-%d")
+        # Tải dữ liệu để tạo đặc trưng (cần 500 ngày để tính toán các đặc trưng rolling dài hạn)
+        start_date = (datetime.datetime.now() - datetime.timedelta(days=500)).strftime("%Y-%m-%d")
         end_date = (datetime.datetime.now() + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
         
         df = fetch_and_prepare_data(ticker, start_date=start_date, end_date=end_date, sentiment_engine="vader")
@@ -220,15 +220,17 @@ def run_prediction_for_ticker(ticker):
         profit_pct = (ref_tp - last_close) / last_close * 100
         loss_pct = (ref_sl - last_close) / last_close * 100
         
-        # Tải win_rate_history từ file cấu hình backtest (mặc định 0.50)
+        # Tải win_rate_history và current_drawdown từ file cấu hình backtest (mặc định 0.50 và 0.0)
         win_rate_history = 0.50
+        current_drawdown = 0.0
         perf_path = os.path.join(ROOT_DIR, 'config', f'performance_metrics_{ticker}.json')
         if os.path.exists(perf_path):
             try:
                 with open(perf_path, 'r', encoding='utf-8') as f:
                     perf_data = json.load(f)
                 win_rate_history = perf_data.get('overall_win_rate', perf_data.get('win_rate', 0.50))
-                print(f"🥇 Nạp win_rate_history thành công cho {ticker}: {win_rate_history*100:.2f}%")
+                current_drawdown = perf_data.get('current_drawdown', 0.0)
+                print(f"🥇 Nạp win_rate_history thành công cho {ticker}: {win_rate_history*100:.2f}% | Drawdown: {current_drawdown*100:.2f}%")
             except Exception as e:
                 print(f"⚠️ Không nạp được file performance metrics cho {ticker}: {e}")
 
@@ -245,7 +247,8 @@ def run_prediction_for_ticker(ticker):
                 win_rate_history=win_rate_history,
                 close_price=last_close,
                 stop_loss=decision.stop_loss,
-                take_profit=decision.take_profit
+                take_profit=decision.take_profit,
+                current_drawdown=current_drawdown
             )
             kelly_size_pct = kelly_results["kelly_size_pct"]
             kelly_raw = kelly_results["kelly_raw"]
@@ -344,18 +347,42 @@ def run_prediction_for_ticker(ticker):
             from src.news_sentiment import fetch_latest_news
             try:
                 news_items = fetch_latest_news(ticker)
-                breaking_titles = [n['title'] for n in news_items if "BREAKING" in n['title'].upper() or "SẬP" in n['title'].upper() or "OUTAGE" in n['title'].upper()]
-                if breaking_titles:
-                    title = breaking_titles[0]
-                    if "outage" in title.lower() or "sập" in title.lower():
+                # Lọc tin tức thông minh: Tin dưới 3 ngày giữ lại; Tin từ 4-7 ngày chỉ giữ nếu có từ khóa tác động mạnh
+                today = datetime.date.today()
+                recent_news = []
+                IMPACT_KEYWORDS = [
+                    "ký kết", "ký văn bản", "hợp đồng", "tỷ đồng", "nghìn tỷ", "lợi nhuận", "doanh thu", 
+                    "outage", "sập", "sáp nhập", "m&a", "bị phạt", "cấm", "contract", "revenue", "profit",
+                    "breaking", "acquisitions", "lawsuit", "fine", "investigation", "thanh tra", "khởi tố"
+                ]
+                for n in news_items:
+                    try:
+                        n_date = datetime.datetime.strptime(n['date'], '%Y-%m-%d').date()
+                        days_diff = (today - n_date).days
+                        if -1 <= days_diff <= 3:
+                            recent_news.append(n)
+                        elif 4 <= days_diff <= 7:
+                            title_lower = n['title'].lower()
+                            title_vi_lower = n.get('title_vi', '').lower()
+                            is_important = any(kw in title_lower or kw in title_vi_lower for kw in IMPACT_KEYWORDS)
+                            if is_important:
+                                recent_news.append(n)
+                    except Exception:
+                        pass
+
+                breaking_news = [n for n in recent_news if "BREAKING" in n['title'].upper() or "SẬP" in n['title'].upper() or "OUTAGE" in n['title'].upper()]
+                if breaking_news:
+                    item = breaking_news[0]
+                    title_vi = item.get('title_vi', item['title'])
+                    if "outage" in item['title'].lower() or "sập" in item['title'].lower():
                         catalysts.append("🔴 <b>Tin tức nóng:</b> Sự cố sập hệ thống toàn cầu của Meta gây sụt giảm doanh thu quảng cáo nghiêm trọng.")
                     else:
-                        catalysts.append(f"🔴 <b>Tin tức nóng:</b> {title}")
-                elif abs(news_sentiment_score) > 0.4:
-                    recent_titles = [n['title'] for n in news_items[:2]]
-                    for rt in recent_titles:
-                        prefix = "🟢" if news_sentiment_score > 0 else "🔴"
-                        catalysts.append(f"{prefix} <b>Tin tức nổi bật:</b> {rt}")
+                        catalysts.append(f"🔴 <b>Tin tức nóng:</b> {title_vi}")
+                # Luôn hiển thị tối đa 2 tin tức nổi bật quan trọng nhất từ recent_news (nếu có) để không bỏ lỡ các sự kiện trọng yếu
+                recent_items = [n for n in recent_news if n not in breaking_news][:2]
+                for item in recent_items:
+                    title_vi = item.get('title_vi', item['title'])
+                    catalysts.append(f"📰 <b>Tin tức nổi bật:</b> {title_vi}")
             except Exception:
                 pass
 

@@ -40,7 +40,8 @@ class RiskAgent:
         return report
 
     def calculate_position_size(self, confidence_score: float, win_rate_history: float,
-                                close_price: float, stop_loss: float, take_profit: float) -> dict:
+                                close_price: float, stop_loss: float, take_profit: float,
+                                current_drawdown: float = 0.0) -> dict:
         """
         Calculates optimal position size using the Kelly Criterion.
         Uses p = min(confidence_score, win_rate_history) to prevent overleveraging.
@@ -58,7 +59,15 @@ class RiskAgent:
         if R > 0:
             # Kelly Formula: f* = (p * R - (1 - p)) / R
             kelly_raw = (p * R - (1.0 - p)) / R
-            kelly_half = max(kelly_raw, 0.0) / 2.0
+            kelly_fraction = max(kelly_raw, 0.0) / 2.0
+            
+            # Scale down Kelly size based on current portfolio drawdown
+            if current_drawdown < -0.25:
+                kelly_fraction *= 0.25
+            elif current_drawdown < -0.15:
+                kelly_fraction *= 0.5
+                
+            kelly_half = kelly_fraction
             kelly_size_pct = min(kelly_half, 0.25) * 100.0
             
         return {

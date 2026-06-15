@@ -25,9 +25,10 @@ class TechnicalAgent:
         report += f"   - Bollinger Bands Position: {bb_position:.2f} (Upper band = 1.0, Lower band = 0.0)\n"
         
         # Formulate a bias recommendation
-        if c1 > 0.0020 and c3 > c1:
+        threshold = 0.0050 if "VNM" in ticker.upper() else 0.0020
+        if c1 > threshold and c3 > c1:
             bias = "Bullish (Strong Momentum)"
-        elif c1 < -0.0020:
+        elif c1 < -threshold:
             bias = "Bearish (Selling Pressure)"
         elif rsi_14 < 30.0:
             bias = "Bullish (Oversold Mean Reversion)"

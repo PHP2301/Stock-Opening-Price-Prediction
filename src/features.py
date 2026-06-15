@@ -46,6 +46,7 @@ class DataTransformer:
             'rsi_14', 'macd_ratio', 'bb_position', 'adx_14', 'stoch_k',
             'efficiency_ratio', 'vix_lag1', 'bond_yield_lag1',
             'usdvnd_change', 'vnindex_return_lag1',
+            'sp500_above_ma200', 'nasdaq_12m_return',
             'day_of_week_sin', 'day_of_week_cos',
             'month_sin', 'month_cos',
             'is_quarter_end', 'days_before_tet',
@@ -153,7 +154,8 @@ class DataTransformer:
         # ── Macro columns từ data_loader (passthrough) ────────────────
         # FIX: các cột macro đã tính trong data_loader, chỉ cần copy qua
         for col in ['vix_lag1', 'bond_yield_lag1', 'usdvnd_change',
-                    'vnindex_return_lag1', 'day_of_week_sin', 'day_of_week_cos',
+                    'vnindex_return_lag1', 'sp500_above_ma200', 'nasdaq_12m_return',
+                    'day_of_week_sin', 'day_of_week_cos',
                     'month_sin', 'month_cos', 'is_quarter_end', 'days_before_tet']:
             if col in df.columns:
                 df_copy[col] = df[col].reset_index(drop=True).values

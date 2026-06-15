@@ -161,7 +161,7 @@ def main():
         
         df_phase1 = df_sorted[df_sorted['date'] < five_years_end].copy()
         df_test_year6 = df_sorted[(df_sorted['date'] >= five_years_end) & (df_sorted['date'] < six_years_end)].copy()
-        df_phase2 = df_sorted[df_sorted['date'] < six_years_end].copy()
+        df_phase2 = df_sorted.copy() # Huấn luyện trên toàn bộ tập dữ liệu (không cắt ở 6 năm)
 
         # Pha 1: Fit transformer trên dữ liệu 5 năm đầu
         X_scaled_p1, y_scaled_p1, y_spread_scaled_p1 = dt.fit_transform_train_only(df_phase1, train_ratio=0.9)
@@ -282,8 +282,8 @@ def main():
                     plt.savefig(os.path.join(results_dir, f'phase1_evaluate_{ticker}.png'), dpi=300)
                     plt.close()
 
-            # ── PHA 2: Huấn luyện lại trên toàn bộ 6 năm ──
-            print(f"🤖 [TRAIN - PHA 2] Huấn luyện lại trên toàn bộ 6 năm...")
+            # ── PHA 2: Huấn luyện lại trên toàn bộ dữ liệu ──
+            print(f"🤖 [TRAIN - PHA 2] Huấn luyện lại trên toàn bộ dữ liệu...")
             dt_p2 = DataTransformer(time_steps=LOOKBACK_WINDOW)
             X_scaled_p2, y_scaled_p2, y_spread_scaled_p2 = dt_p2.fit_transform_train_only(df_phase2, train_ratio=0.9)
             X_3D_p2, y_3D_p2, y_spread_3D_p2 = dt_p2.create_sliding_windows(X_scaled_p2, y_scaled_p2, y_spread_scaled_p2)
@@ -414,7 +414,7 @@ def main():
 
         # ── Live prediction ──────────────────────────────────────────
         print(f"\n🔮 Dự báo giá đóng cửa 3 ngày tới (T+3) — {ticker}...")
-        raw_df = yf.download(ticker, period="150d", progress=False)
+        raw_df = yf.download(ticker, period="500d", progress=False)
         if raw_df.empty:
             print(f"  Không tải được dữ liệu live cho {ticker}")
             continue
@@ -427,7 +427,7 @@ def main():
         # Quy đổi USD→VND cho non-VNM
         if "VNM" not in ticker.upper():
             try:
-                df_rate_hist = yf.download("USDVND=X", period="150d", progress=False)
+                df_rate_hist = yf.download("USDVND=X", period="500d", progress=False)
                 if not df_rate_hist.empty:
                     if isinstance(df_rate_hist.columns, pd.MultiIndex):
                         df_rate_hist.columns = [c[0].lower() for c in df_rate_hist.columns]

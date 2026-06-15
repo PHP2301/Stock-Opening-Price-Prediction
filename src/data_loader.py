@@ -241,7 +241,7 @@ def fetch_and_prepare_data(
                 req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
                 with urllib.request.urlopen(req) as res:
                     dnse_raw = json.loads(res.read())
-                if 't' in dnse_raw and len(dnse_raw['t']) > 0:
+                if 't' in dnse_raw and dnse_raw['t'] is not None and len(dnse_raw['t']) > 0:
                     df_dnse = pd.DataFrame({
                         'date':   pd.to_datetime(dnse_raw['t'], unit='s'),
                         'open':   dnse_raw['o'], 'high': dnse_raw['h'],
@@ -320,6 +320,8 @@ def fetch_and_prepare_data(
     df_vix    = _load_yf_series("^VIX",       'vix')
     df_tnx    = _load_yf_series("^TNX",       'bond_yield_10y')
     df_dxy    = _load_yf_series("DX-Y.NYB",   'dollar_index_change', pct_change=True)
+    df_sp500  = _load_yf_series("^GSPC",      'sp500')
+    df_nasdaq = _load_yf_series("^IXIC",      'nasdaq')
 
     df = pd.merge(df, df_market, on='date', how='left')
     df['market_return']    = df['market_return'].fillna(0.0)
@@ -329,6 +331,17 @@ def fetch_and_prepare_data(
     df['bond_yield_10y']   = df['bond_yield_10y'].ffill().bfill().fillna(4.0)
     df = pd.merge(df, df_dxy, on='date', how='left')
     df['dollar_index_change'] = df['dollar_index_change'].fillna(0.0)
+
+    # Thêm S&P 500 và NASDAQ cho Regime Detection
+    df = pd.merge(df, df_sp500, on='date', how='left')
+    df['sp500'] = df['sp500'].ffill().bfill().fillna(4000.0)
+    df = pd.merge(df, df_nasdaq, on='date', how='left')
+    df['nasdaq'] = df['nasdaq'].ffill().bfill().fillna(15000.0)
+
+    # Tính toán chỉ báo Regime
+    sp500_ma200 = df['sp500'].rolling(200, min_periods=1).mean()
+    df['sp500_above_ma200'] = (df['sp500'] > sp500_ma200).astype(float)
+    df['nasdaq_12m_return'] = (df['nasdaq'] / df['nasdaq'].shift(252) - 1).fillna(0.0)
 
     # USD/VND change
     if df_usd_vnd is not None:
@@ -345,6 +358,8 @@ def fetch_and_prepare_data(
         df['bond_yield_lag1']     = df['bond_yield_10y'].shift(1)
         df['usdvnd_change']       = df['usdvnd_change'].shift(1)
         df['vnindex_return_lag1'] = df['market_return'].shift(1)
+        df['sp500_above_ma200']   = df['sp500_above_ma200'].shift(1)
+        df['nasdaq_12m_return']   = df['nasdaq_12m_return'].shift(1)
     else:
         df['vix_lag1']            = df['vix']
         df['bond_yield_lag1']     = df['bond_yield_10y']
@@ -353,6 +368,8 @@ def fetch_and_prepare_data(
 
     df['vix_lag1']        = df['vix_lag1'].ffill().bfill().fillna(20.0)
     df['bond_yield_lag1'] = df['bond_yield_lag1'].ffill().bfill().fillna(4.0)
+    df['sp500_above_ma200'] = df['sp500_above_ma200'].ffill().bfill().fillna(1.0)
+    df['nasdaq_12m_return'] = df['nasdaq_12m_return'].ffill().bfill().fillna(0.0)
 
     # Calendar features
     df['day_of_week_sin'] = np.sin(2 * np.pi * df['date'].dt.dayofweek / 5)

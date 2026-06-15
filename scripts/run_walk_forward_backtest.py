@@ -119,6 +119,7 @@ def run_simulation(
 
     buy_index = -1
     HOLD_DAYS = 3
+    peak_price = 0.0
 
     max_equity_peak = initial_capital
     portfolio_stop_loss_triggered = False
@@ -156,15 +157,37 @@ def run_simulation(
                 price=sell_price, cash=cash,
             ))
 
+        # META G3: Trailing stop 4% từ đỉnh
+        if position == 1 and not just_sold:
+            current_close = df_test_extended['close'].values[i]
+            peak_price = max(peak_price, current_close)
+            if ticker == "META" and current_close < peak_price * 0.96:
+                cash     = shares * sell_price * (1 - commission_pct)
+                shares   = 0.0
+                position = 0
+                buy_index = -1
+                just_sold = True
+                trades.append(dict(
+                    date=date_str(dates[i]), type="SELL",
+                    price=sell_price, cash=cash,
+                    note="TRAILING_STOP"
+                ))
+
         if position == 0 and is_buy and not just_sold:
-            shares   = cash * (1 - commission_pct) / buy_price
-            cash     = 0.0
-            position = 1
-            buy_index = i
-            trades.append(dict(
-                date=date_str(dates[i]), type="BUY",
-                price=buy_price, shares=shares,
-            ))
+            # VNM G2: Bộ lọc thanh khoản
+            if "VNM" in ticker.upper() and vol_zscore[i] < -0.5:
+                is_buy = False
+
+            if is_buy:
+                shares   = cash * (1 - commission_pct) / buy_price
+                cash     = 0.0
+                position = 1
+                buy_index = i
+                peak_price = df_test_extended['close'].values[i]
+                trades.append(dict(
+                    date=date_str(dates[i]), type="BUY",
+                    price=buy_price, shares=shares,
+                ))
 
         cur_equity = (
             cash if position == 0
@@ -446,12 +469,21 @@ def main():
         assert len(trans_returns_all) == len(df_test_all), \
             f"Lệch độ dài: dự báo={len(trans_returns_all)}, thực tế={len(df_test_all)}"
 
+        # Tỷ lệ threshold động cho từng ticker
+        cur_threshold_buy = 0.0050 if "VNM" in ticker.upper() else 0.0010
+        if len(args_cleaned) > 2:
+            try:
+                cur_threshold_buy = float(args_cleaned[2])
+            except ValueError:
+                pass
+        cur_threshold_sell = -cur_threshold_buy
+
         print(f"\n📊 [SIMULATION] Chạy giả lập trên dữ liệu liên tục 2023 → 2026 ({len(df_test_all)} phiên)...")
         dates, equity, bh_equity, trades = run_simulation(
             df_test_all, df_test_extended_all,
             xgb_returns_all, trans_returns_all,
             ticker, commission_pct, slippage_pct,
-            threshold_buy, threshold_sell
+            cur_threshold_buy, cur_threshold_sell
         )
 
         metrics = compute_metrics(equity, bh_equity, dates)
@@ -496,6 +528,10 @@ def main():
         config_dir = os.path.join(ROOT_DIR, 'config')
         os.makedirs(config_dir, exist_ok=True)
         perf_path = os.path.join(config_dir, f'performance_metrics_{ticker}.json')
+        
+        # Tính drawdown cuối kỳ làm proxy cho current_drawdown
+        current_drawdown = (equity[-1] - max(equity)) / max(equity) if len(equity) > 0 else 0.0
+
         perf_data = {
             'overall_win_rate': win_rate / 100.0,
             'total_trades': total_trades,
@@ -504,6 +540,7 @@ def main():
             'bh_return': metrics['bh_return'],
             'sharpe': metrics['sharpe'],
             'max_drawdown': metrics['mdd'],
+            'current_drawdown': current_drawdown,
             'timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
         with open(perf_path, 'w', encoding='utf-8') as f:

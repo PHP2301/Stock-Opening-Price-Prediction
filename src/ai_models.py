@@ -19,9 +19,9 @@ class CustomLambda(tf.keras.layers.Layer):
         elif 'slice_volume' in name:
             return inputs[:, :, 12:18]
         elif 'slice_tech' in name:
-            return inputs[:, :, 18:34]
+            return inputs[:, :, 18:36]
         elif 'slice_flow_div' in name:
-            return inputs[:, :, 34:42]
+            return inputs[:, :, 36:44]
         return inputs
 
     def compute_output_shape(self, input_shape):
@@ -33,7 +33,7 @@ class CustomLambda(tf.keras.layers.Layer):
         elif 'slice_volume' in name:
             return (input_shape[0], input_shape[1], 6)
         elif 'slice_tech' in name:
-            return (input_shape[0], input_shape[1], 16)
+            return (input_shape[0], input_shape[1], 18)
         elif 'slice_flow_div' in name:
             return (input_shape[0], input_shape[1], 8)
         return input_shape
@@ -338,8 +338,8 @@ def build_transformer(input_shape, d_model=128, num_heads=8, key_dim=16, dropout
 
     x_price  = tf.keras.layers.Lambda(lambda x: x[:, :,  0:12], output_shape=lambda s: (s[0], s[1], 12), name="slice_price")(inputs)
     x_volume = tf.keras.layers.Lambda(lambda x: x[:, :, 12:18], output_shape=lambda s: (s[0], s[1], 6), name="slice_volume")(inputs)
-    x_tech   = tf.keras.layers.Lambda(lambda x: x[:, :, 18:34], output_shape=lambda s: (s[0], s[1], 16), name="slice_tech")(inputs)
-    x_flow_div = tf.keras.layers.Lambda(lambda x: x[:, :, 34:42], output_shape=lambda s: (s[0], s[1], 8), name="slice_flow_div")(inputs)
+    x_tech   = tf.keras.layers.Lambda(lambda x: x[:, :, 18:36], output_shape=lambda s: (s[0], s[1], 18), name="slice_tech")(inputs)
+    x_flow_div = tf.keras.layers.Lambda(lambda x: x[:, :, 36:44], output_shape=lambda s: (s[0], s[1], 8), name="slice_flow_div")(inputs)
 
     def branch(x, filters, num_heads_branch, key_dim_branch, gru_units, latent_dim, name):
         x = Conv1D(filters, 3, padding='same', activation='relu',
@@ -395,10 +395,10 @@ if __name__ == "__main__":
     if hasattr(sys.stdout, 'reconfigure'):
         sys.stdout.reconfigure(encoding='utf-8')
     print("=== TESTING AI MODEL ===")
-    m = build_transformer((45, 42))
+    m = build_transformer((45, 44))
     print("outputs:", [o.name for o in m.backbone.outputs])
     print("inputs :", m.inputs)
     
-    dummy = np.zeros((2, 45, 42), dtype=np.float32)
+    dummy = np.zeros((2, 45, 44), dtype=np.float32)
     out = m(dummy, training=False)
     print("Test forward OK, output shapes:", [o.shape for o in out])

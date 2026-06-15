@@ -94,18 +94,50 @@ def check_and_alert_catalysts(ticker, cache):
     # 1. Kiểm tra tin tức nóng (Breaking/Outage/Sập)
     try:
         news_items = fetch_latest_news(ticker)
-        breaking_titles = [n['title'] for n in news_items if "BREAKING" in n['title'].upper() or "SẬP" in n['title'].upper() or "OUTAGE" in n['title'].upper()]
-        for bt in breaking_titles:
-            # Hash tiêu đề để kiểm tra trùng lặp
-            h = hashlib.md5(bt.encode('utf-8')).hexdigest()
-            cache_key = f"news_{ticker}_{h}"
+        # Lọc tin tức thông minh: Tin dưới 3 ngày giữ lại; Tin từ 4-7 ngày chỉ giữ nếu có từ khóa tác động mạnh
+        today = datetime.date.today()
+        recent_news = []
+        IMPACT_KEYWORDS = [
+            "ký kết", "ký văn bản", "hợp đồng", "tỷ đồng", "nghìn tỷ", "lợi nhuận", "doanh thu", 
+            "outage", "sập", "sáp nhập", "m&a", "bị phạt", "cấm", "contract", "revenue", "profit",
+            "breaking", "acquisitions", "lawsuit", "fine", "investigation", "thanh tra", "khởi tố"
+        ]
+        for n in news_items:
+            try:
+                n_date = datetime.datetime.strptime(n['date'], '%Y-%m-%d').date()
+                days_diff = (today - n_date).days
+                if -1 <= days_diff <= 3:
+                    recent_news.append(n)
+                elif 4 <= days_diff <= 7:
+                    title_lower = n['title'].lower()
+                    title_vi_lower = n.get('title_vi', '').lower()
+                    is_important = any(kw in title_lower or kw in title_vi_lower for kw in IMPACT_KEYWORDS)
+                    if is_important:
+                        recent_news.append(n)
+            except Exception:
+                pass
+        
+        for item in recent_news:
+            orig_title = item['title']
+            title_vi   = item.get('title_vi', orig_title)
+            title_upper = orig_title.upper()
+            title_vi_upper = title_vi.upper()
             
-            if cache_key not in cache["alerted_catalysts"]:
-                if "outage" in bt.lower() or "sập" in bt.lower():
-                    desc = "🔴 <b>Tin tức nóng:</b> Sự cố sập hệ thống toàn cầu của Meta gây sụt giảm doanh thu quảng cáo nghiêm trọng."
-                else:
-                    desc = f"🔴 <b>Tin tức nóng:</b> {bt}"
-                catalysts.append((cache_key, desc))
+            is_breaking = "BREAKING" in title_upper or "SẬP" in title_upper or "OUTAGE" in title_upper
+            is_important = any(kw.upper() in title_upper or kw.upper() in title_vi_upper for kw in IMPACT_KEYWORDS)
+            
+            if is_breaking or is_important:
+                h = hashlib.md5(orig_title.encode('utf-8')).hexdigest()
+                cache_key = f"news_{ticker}_{h}"
+                
+                if cache_key not in cache["alerted_catalysts"]:
+                    if "outage" in orig_title.lower() or "sập" in orig_title.lower():
+                        desc = "🔴 <b>Tin tức nóng:</b> Sự cố sập hệ thống toàn cầu của Meta gây sụt giảm doanh thu quảng cáo nghiêm trọng."
+                    elif is_breaking:
+                        desc = f"🔴 <b>Tin tức nóng:</b> {title_vi}"
+                    else:
+                        desc = f"📰 <b>Tin tức quan trọng:</b> {title_vi}"
+                    catalysts.append((cache_key, desc))
     except Exception as e:
         print(f"⚠️ Lỗi fetch news cho {ticker}: {e}")
 

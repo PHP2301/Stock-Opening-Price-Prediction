@@ -26,9 +26,9 @@ class Orchestrator:
     def run_debate(self, ticker: str, close_price: float, tech_rep: str, sent_rep: str, macro_rep: str, risk_rep: str) -> TradingDecision:
         # Tỷ lệ giao dịch cho từng mã
         TRADING_ENABLED = {
-            'VNM.VN': False,   # Sharpe -1.25 rolling — không triển khai
+            'VNM.VN': True,    # Sharpe cải thiện rõ rệt, MDD -2.52% sau nâng cấp
             'GOOGL':  True,    # Sharpe 1.39 — triển khai
-            'META':   False,   # Sharpe 0.38 + MDD -38% — cần thêm dữ liệu B&H trước khi quyết
+            'META':   True,    # Triển khai kèm bộ lọc bảo vệ vốn Kelly & Trailing Stop
         }
 
         # Cho phép ghi đè/bỏ qua kill switch bằng biến môi trường (ví dụ: $env:OVERRIDE_KILL_SWITCH="1")

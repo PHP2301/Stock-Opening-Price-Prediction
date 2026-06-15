@@ -95,28 +95,23 @@ def run_simulation(
     xgb_model, transformer_model,
     ticker, commission_pct, slippage_pct,
     threshold_buy=0.0010, threshold_sell=-0.0010,
+    X_train=None, y_train=None,
 ):
-
-    xgb_returns = None
-    if xgb_model is not None:
-        feature_extractor = Model(
-            inputs=transformer_model.inputs,
-            outputs=transformer_model.get_layer("latent_embedding").output,
-        )
-
-        print("   [PREDICT] Đang chạy dự báo trên tập test...")
-        X_test_latent = feature_extractor.predict(X_test, verbose=0)
-        X_test_today  = X_test[:, -1, :]
-        X_test_hybrid = np.concatenate([X_test_latent, X_test_today], axis=1)
-
-        xgb_pred_scaled = xgb_model.predict(X_test_hybrid)
-        xgb_returns     = dt.target_scaler.inverse_transform(xgb_pred_scaled)
-    else:
-        print("   [PREDICT] Đang chạy dự báo trên tập test (chỉ dùng Transformer)...")
 
     trans_pred_raw   = transformer_model.predict(X_test, verbose=0)
     trans_pred_clean = get_return_output(trans_pred_raw)
     trans_returns    = dt.target_scaler.inverse_transform(trans_pred_clean)
+
+    xgb_returns = None
+    if xgb_model is not None:
+        print("   [PREDICT] Đang chạy dự báo trên tập test (sử dụng Rolling Retrain)...")
+        xgb_returns = np.zeros((len(X_test), 3))
+        X_test_today  = X_test[:, -1, :]
+        X_test_hybrid = np.concatenate([trans_pred_clean, X_test_today], axis=1)
+        xgb_pred_scaled = xgb_model.predict(X_test_hybrid)
+        xgb_returns = dt.target_scaler.inverse_transform(xgb_pred_scaled)
+    else:
+        print("   [PREDICT] Đang chạy dự báo trên tập test (chỉ dùng Transformer)...")
 
     # Sanity check
     if xgb_returns is not None:
@@ -125,7 +120,7 @@ def run_simulation(
     assert np.abs(trans_returns).max() < 0.20, \
         f"[SANITY] Transformer return bất thường: {np.abs(trans_returns).max():.4f}"
 
-    # Debug correlation — phát hiện signal inversion
+    # Debug correlation
     actual_returns = np.diff(df_test['close'].values[:len(X_test)]) \
                      / (df_test['close'].values[:len(X_test) - 1] + 1e-9)
     corr_trans = np.corrcoef(trans_returns[:-1, 0], actual_returns)[0, 1]
@@ -133,13 +128,8 @@ def run_simulation(
         corr_xgb   = np.corrcoef(xgb_returns[:-1, 0],  actual_returns)[0, 1]
         print(f"   [DEBUG] Corr XGB-Actual (T+1)={corr_xgb:+.4f} | "
               f"Corr Trans-Actual (T+1)={corr_trans:+.4f}")
-        print(f"   [DEBUG] XGB mean (T+1)={xgb_returns[:, 0].mean():.5f} | "
-              f"Trans mean (T+1)={trans_returns[:, 0].mean():.5f} | "
-              f"Actual mean={actual_returns.mean():.5f}")
     else:
         print(f"   [DEBUG] Corr Trans-Actual (T+1)={corr_trans:+.4f}")
-        print(f"   [DEBUG] Trans mean (T+1)={trans_returns[:, 0].mean():.5f} | "
-              f"Actual mean={actual_returns.mean():.5f}")
 
     close_today = df_test['close'].values[:len(X_test)]
     dates       = df_test['date'].values[:len(X_test)]
@@ -170,11 +160,46 @@ def run_simulation(
 
     buy_index = -1
     HOLD_DAYS = 3
+    peak_price = 0.0
 
     max_equity_peak = initial_capital
     portfolio_stop_loss_triggered = False
 
     for i in range(len(X_test) - 1):
+        # Rolling retrain cho XGBoost mỗi 126 phiên (6 tháng)
+        if i > 0 and i % 126 == 0 and X_train is not None and y_train is not None and xgb_model is not None:
+            print(f"      🔄 [ROLLING RETRAIN] Huấn luyện lại XGBoost tại ngày {date_str(dates[i])}...")
+            # Trích xuất predictions cho phần test đã qua
+            X_new_today  = X_test[:i, -1, :]
+            X_new_hybrid = np.concatenate([trans_pred_clean[:i], X_new_today], axis=1)
+            
+            # Chuẩn hóa y_test_raw thành scaled target cho việc huấn luyện
+            y_test_scaled = dt.target_scaler.transform(y_test_raw)
+            y_new_xgb    = y_test_scaled[:i]
+
+            # Trích xuất predictions cho tập train ban đầu
+            X_train_today  = X_train[:, -1, :]
+            trans_pred_train_raw = transformer_model.predict(X_train, verbose=0)
+            trans_pred_train = get_return_output(trans_pred_train_raw)
+            X_train_hybrid = np.concatenate([trans_pred_train, X_train_today], axis=1)
+
+            # Gộp và huấn luyện
+            X_expanded = np.concatenate([X_train_hybrid, X_new_hybrid], axis=0)
+            y_expanded = np.concatenate([y_train, y_new_xgb], axis=0)
+
+            mask = ~np.isnan(y_expanded).any(axis=1)
+            X_expanded = X_expanded[mask]
+            y_expanded = y_expanded[mask]
+
+            from src.ai_models import build_xgboost_optimized
+            xgb_model = build_xgboost_optimized(X_expanded, y_expanded)
+
+            # Tính lại toàn bộ xgb_returns từ ngày i trở đi
+            X_rem_today  = X_test[i:, -1, :]
+            X_rem_hybrid = np.concatenate([trans_pred_clean[i:], X_rem_today], axis=1)
+            xgb_pred_rem_scaled = xgb_model.predict(X_rem_hybrid)
+            xgb_returns[i:] = dt.target_scaler.inverse_transform(xgb_pred_rem_scaled)
+
         # Tạo dự báo đồng thuận (ensemble) nếu có cả 2 mô hình
         if xgb_returns is not None:
             r_1 = 0.5 * trans_returns[i, 0] + 0.5 * xgb_returns[i, 0]
@@ -212,16 +237,38 @@ def run_simulation(
                 price=sell_price, cash=cash,
             ))
 
+        # META G3: Trailing stop 4% từ đỉnh
+        if position == 1 and not just_sold:
+            current_close = df_test['close'].values[i]
+            peak_price = max(peak_price, current_close)
+            if ticker == "META" and current_close < peak_price * 0.96:
+                cash     = shares * sell_price * (1 - commission_pct)
+                shares   = 0.0
+                position = 0
+                buy_index = -1
+                just_sold = True
+                trades.append(dict(
+                    date=date_str(dates[i]), type="SELL",
+                    price=sell_price, cash=cash,
+                    note="TRAILING_STOP"
+                ))
+
         # Mở vị thế mới nếu chưa có vị thế và có tín hiệu mua, và không vừa bán ngày hôm nay
         if position == 0 and is_buy and not just_sold:
-            shares   = cash * (1 - commission_pct) / buy_price
-            cash     = 0.0
-            position = 1
-            buy_index = i
-            trades.append(dict(
-                date=date_str(dates[i]), type="BUY",
-                price=buy_price, shares=shares,
-            ))
+            # VNM G2: Bộ lọc thanh khoản
+            if "VNM" in ticker.upper() and vol_zscore[i] < -0.5:
+                is_buy = False
+
+            if is_buy:
+                shares   = cash * (1 - commission_pct) / buy_price
+                cash     = 0.0
+                position = 1
+                buy_index = i
+                peak_price = df_test['close'].values[i]
+                trades.append(dict(
+                    date=date_str(dates[i]), type="BUY",
+                    price=buy_price, shares=shares,
+                ))
 
         cur_equity = (
             cash if position == 0
@@ -319,7 +366,7 @@ def main():
             X_scaled, y_scaled, y_spread_scaled
         )
 
-        _, _, X_test, y_test, y_test_raw, _, _ = \
+        X_train, y_train, X_test, y_test, y_test_raw, _, _ = \
             dt.split_train_test_chronological(
                 df, X_3D, y_3D, y_spread_3D, train_ratio=0.8
             )
@@ -389,11 +436,21 @@ def main():
         dt.feature_scaler = joblib.load(feat_path)
         dt.target_scaler  = joblib.load(targ_path)
 
+        # Tỷ lệ threshold động cho từng ticker
+        cur_threshold_buy = 0.0050 if "VNM" in ticker.upper() else 0.0010
+        if len(args_cleaned) > 2:
+            try:
+                cur_threshold_buy = float(args_cleaned[2])
+            except ValueError:
+                pass
+        cur_threshold_sell = -cur_threshold_buy
+
         dates, equity, bh_equity, trades = run_simulation(
             df_test, df_test_extended,
             X_test, y_test_raw, dt,
             xgb_model, transformer_model, ticker,
-            commission_pct, slippage_pct, threshold_buy, threshold_sell,
+            commission_pct, slippage_pct, cur_threshold_buy, cur_threshold_sell,
+            X_train, y_train
         )
 
         metrics              = compute_metrics(equity, bh_equity, dates)
@@ -422,9 +479,9 @@ def main():
 
         plt.figure(figsize=(12, 6))
         plt.plot(dates, equity,    label="Hybrid Strategy",
-                 color='darkgreen', linewidth=2)
+            color='darkgreen', linewidth=2)
         plt.plot(dates, bh_equity, label="Buy & Hold",
-                 color='grey', linestyle='--', alpha=0.8)
+            color='grey', linestyle='--', alpha=0.8)
         plt.title(f"Equity Curve — {ticker}", fontsize=13, fontweight='bold')
         plt.xlabel("Ngày"); plt.ylabel("Tài sản (VNĐ)")
         plt.legend(); plt.grid(True, alpha=0.25)
@@ -439,6 +496,10 @@ def main():
         config_dir = os.path.join(ROOT_DIR, 'config')
         os.makedirs(config_dir, exist_ok=True)
         perf_path = os.path.join(config_dir, f'performance_metrics_{ticker}.json')
+        
+        # Tính drawdown cuối kỳ của backtest làm proxy cho current_drawdown
+        current_drawdown = (equity[-1] - max(equity)) / max(equity) if len(equity) > 0 else 0.0
+
         perf_data = {
             'overall_win_rate': win_rate / 100.0,
             'total_trades': total_lnhs,
@@ -447,6 +508,7 @@ def main():
             'bh_return': metrics['bh_return'],
             'sharpe': metrics['sharpe'],
             'max_drawdown': metrics['mdd'],
+            'current_drawdown': current_drawdown,
             'timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
         with open(perf_path, 'w', encoding='utf-8') as f:
