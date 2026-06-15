@@ -13,27 +13,42 @@ class CustomLambda(tf.keras.layers.Layer):
         super().__init__(**kwargs)
 
     def call(self, inputs):
+        num_features = inputs.shape[-1]
+        if num_features is None:
+            num_features = 44
         name = getattr(self, 'name', '')
         if 'slice_price' in name:
             return inputs[:, :, 0:12]
         elif 'slice_volume' in name:
             return inputs[:, :, 12:18]
         elif 'slice_tech' in name:
-            return inputs[:, :, 18:36]
+            if num_features == 42:
+                return inputs[:, :, 18:34]
+            else:
+                return inputs[:, :, 18:36]
         elif 'slice_flow_div' in name:
-            return inputs[:, :, 36:44]
+            if num_features == 42:
+                return inputs[:, :, 34:42]
+            else:
+                return inputs[:, :, 36:44]
         return inputs
 
     def compute_output_shape(self, input_shape):
         if isinstance(input_shape, list) and len(input_shape) == 1:
             input_shape = input_shape[0]
+        num_features = input_shape[-1]
+        if num_features is None:
+            num_features = 44
         name = getattr(self, 'name', '')
         if 'slice_price' in name:
             return (input_shape[0], input_shape[1], 12)
         elif 'slice_volume' in name:
             return (input_shape[0], input_shape[1], 6)
         elif 'slice_tech' in name:
-            return (input_shape[0], input_shape[1], 18)
+            if num_features == 42:
+                return (input_shape[0], input_shape[1], 16)
+            else:
+                return (input_shape[0], input_shape[1], 18)
         elif 'slice_flow_div' in name:
             return (input_shape[0], input_shape[1], 8)
         return input_shape
@@ -335,11 +350,20 @@ def build_transformer(input_shape, d_model=128, num_heads=8, key_dim=16, dropout
       - multi_task=False: Functional model thông thường
     """
     inputs = Input(shape=input_shape)
+    num_features = input_shape[-1]
+    if num_features is None:
+        num_features = 44
 
-    x_price  = tf.keras.layers.Lambda(lambda x: x[:, :,  0:12], output_shape=lambda s: (s[0], s[1], 12), name="slice_price")(inputs)
-    x_volume = tf.keras.layers.Lambda(lambda x: x[:, :, 12:18], output_shape=lambda s: (s[0], s[1], 6), name="slice_volume")(inputs)
-    x_tech   = tf.keras.layers.Lambda(lambda x: x[:, :, 18:36], output_shape=lambda s: (s[0], s[1], 18), name="slice_tech")(inputs)
-    x_flow_div = tf.keras.layers.Lambda(lambda x: x[:, :, 36:44], output_shape=lambda s: (s[0], s[1], 8), name="slice_flow_div")(inputs)
+    if num_features == 42:
+        x_price  = tf.keras.layers.Lambda(lambda x: x[:, :,  0:12], output_shape=lambda s: (s[0], s[1], 12), name="slice_price")(inputs)
+        x_volume = tf.keras.layers.Lambda(lambda x: x[:, :, 12:18], output_shape=lambda s: (s[0], s[1], 6), name="slice_volume")(inputs)
+        x_tech   = tf.keras.layers.Lambda(lambda x: x[:, :, 18:34], output_shape=lambda s: (s[0], s[1], 16), name="slice_tech")(inputs)
+        x_flow_div = tf.keras.layers.Lambda(lambda x: x[:, :, 34:42], output_shape=lambda s: (s[0], s[1], 8), name="slice_flow_div")(inputs)
+    else:
+        x_price  = tf.keras.layers.Lambda(lambda x: x[:, :,  0:12], output_shape=lambda s: (s[0], s[1], 12), name="slice_price")(inputs)
+        x_volume = tf.keras.layers.Lambda(lambda x: x[:, :, 12:18], output_shape=lambda s: (s[0], s[1], 6), name="slice_volume")(inputs)
+        x_tech   = tf.keras.layers.Lambda(lambda x: x[:, :, 18:36], output_shape=lambda s: (s[0], s[1], 18), name="slice_tech")(inputs)
+        x_flow_div = tf.keras.layers.Lambda(lambda x: x[:, :, 36:44], output_shape=lambda s: (s[0], s[1], 8), name="slice_flow_div")(inputs)
 
     def branch(x, filters, num_heads_branch, key_dim_branch, gru_units, latent_dim, name):
         x = Conv1D(filters, 3, padding='same', activation='relu',

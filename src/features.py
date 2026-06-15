@@ -28,13 +28,13 @@ def kalman_filter(series: pd.Series, R: float = 0.01, Q: float = 1e-5) -> pd.Ser
 
 
 class DataTransformer:
-    def __init__(self, time_steps: int = 45):
+    def __init__(self, time_steps: int = 45, num_features: int = 44):
         self.time_steps = time_steps
         self.feature_scaler = StandardScaler()
         self.target_scaler  = StandardScaler()
         self.spread_scaler  = StandardScaler()
 
-        self.feature_cols = [
+        cols_44 = [
             # Nhánh 1 — Giá & Động lượng (12)
             'gap_open', 'open_return', 'buying_pressure', 'shadow_ratio',
             'intraday_range', 'return_1d', 'return_2d', 'return_3d',
@@ -42,7 +42,7 @@ class DataTransformer:
             # Nhánh 2 — Khối lượng & Biến động (6)
             'volume_change', 'volume_sma_ratio', 'volume_zscore',
             'ad_line_ratio', 'obv_zscore', 'vol_ratio',
-            # Nhánh 3 — Kỹ thuật, Vĩ mô & Lịch (16)
+            # Nhánh 3 — Kỹ thuật, Vĩ mô & Lịch (18)
             'rsi_14', 'macd_ratio', 'bb_position', 'adx_14', 'stoch_k',
             'efficiency_ratio', 'vix_lag1', 'bond_yield_lag1',
             'usdvnd_change', 'vnindex_return_lag1',
@@ -55,6 +55,11 @@ class DataTransformer:
             'foreign_net_buy_proxy', 'foreign_net_buy_5d', 'foreign_net_buy_20d',
             'self_net_buy_proxy'
         ]
+        if num_features == 42:
+            self.feature_cols = [c for c in cols_44 if c not in ['sp500_above_ma200', 'nasdaq_12m_return']]
+        else:
+            self.feature_cols = cols_44
+            
         self.target_cols = ['target_return_1d', 'target_return_2d', 'target_return_3d']
         self.spread_cols = ['target_spread_1d', 'target_spread_2d', 'target_spread_3d']
 

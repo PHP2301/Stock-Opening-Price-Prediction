@@ -84,7 +84,8 @@ def run_prediction_for_ticker(ticker):
         df['atr_14'] = ta.atr(df['high'], df['low'], df['close'], length=14)
         
 
-        transformer = DataTransformer(time_steps=LOOKBACK_WINDOW)
+        num_features = getattr(scaler_X, 'n_features_in_', 44)
+        transformer = DataTransformer(time_steps=LOOKBACK_WINDOW, num_features=num_features)
         # SỬA: Phải gọi transform_df() để sinh ra 34 features trước khi lọc cột đặc trưng
         df_transformed = transformer.transform_df(df)
         recent_features = df_transformed[transformer.feature_cols].tail(LOOKBACK_WINDOW)

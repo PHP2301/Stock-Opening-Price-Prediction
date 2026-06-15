@@ -25,7 +25,7 @@ ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "
 sys.path.append(ROOT_DIR)
 
 from src.web.backend.db import get_db, Stock, StockPrice, NewsSentiment, PredictionRecord, init_db
-from src.ai_models import PositionalEmbedding, TimeDecayAttention, MultiTaskModel, UncertaintyWeightsLayer
+from src.ai_models import PositionalEmbedding, TimeDecayAttention, MultiTaskModel, UncertaintyWeightsLayer, CustomLambda
 from src.data_loader import format_vn, get_realtime_usd_vnd_rate
 from src.features import DataTransformer
 
@@ -154,7 +154,8 @@ def trigger_prediction(ticker: str, db: Session = Depends(get_db)):
                 'PositionalEmbedding': PositionalEmbedding,
                 'TimeDecayAttention': TimeDecayAttention,
                 'MultiTaskModel': MultiTaskModel,
-                'UncertaintyWeightsLayer': UncertaintyWeightsLayer
+                'UncertaintyWeightsLayer': UncertaintyWeightsLayer,
+                'Lambda': CustomLambda
             },
             safe_mode=False
         )
@@ -169,11 +170,12 @@ def trigger_prediction(ticker: str, db: Session = Depends(get_db)):
         if df.empty:
             raise HTTPException(status_code=500, detail="Không thể tải và chuẩn bị dữ liệu giao dịch mới nhất")
             
-        transformer = DataTransformer(time_steps=LOOKBACK_WINDOW)
+        num_features = getattr(scaler_X, 'n_features_in_', 44)
+        transformer = DataTransformer(time_steps=LOOKBACK_WINDOW, num_features=num_features)
         df = df.sort_values('date').reset_index(drop=True)
         df['atr_14'] = ta.atr(df['high'], df['low'], df['close'], length=14)
         
-        # Calculate 34 features using transform_df
+        # Calculate features using transform_df
         df_transformed = transformer.transform_df(df)
         recent_features = df_transformed[transformer.feature_cols].tail(LOOKBACK_WINDOW)
         if len(recent_features) < LOOKBACK_WINDOW:
@@ -184,7 +186,7 @@ def trigger_prediction(ticker: str, db: Session = Depends(get_db)):
         
         # Scale inputs
         recent_scaled = scaler_X.transform(recent_features.values)
-        X_predict = recent_scaled.reshape(1, LOOKBACK_WINDOW, len(FEATURE_COLS))
+        X_predict = recent_scaled.reshape(1, LOOKBACK_WINDOW, len(transformer.feature_cols))
         
         # Gọi mô hình với dữ liệu để khởi tạo thuộc tính input/output của đồ thị Functional
         _ = transformer_model(X_predict)

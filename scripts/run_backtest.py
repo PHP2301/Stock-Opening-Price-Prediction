@@ -360,7 +360,16 @@ def main():
 
         df = fetch_and_prepare_data(ticker, start_date="2012-01-01", end_date="2026-05-20")
 
-        dt = DataTransformer(time_steps=45)
+        feat_path  = os.path.join(models_dir, f'feature_scaler_{ticker}.pkl')
+        num_features = 44
+        if os.path.exists(feat_path):
+            try:
+                temp_scaler = joblib.load(feat_path)
+                num_features = getattr(temp_scaler, 'n_features_in_', 44)
+            except Exception:
+                pass
+
+        dt = DataTransformer(time_steps=45, num_features=num_features)
         X_scaled, y_scaled, y_spread_scaled = dt.fit_transform_train_only(df, train_ratio=0.8)
         X_3D, y_3D, y_spread_3D = dt.create_sliding_windows(
             X_scaled, y_scaled, y_spread_scaled
