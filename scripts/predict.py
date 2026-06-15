@@ -24,7 +24,7 @@ sys.path.append(ROOT_DIR)
 
 from src.data_loader import fetch_and_prepare_data, format_vn, get_realtime_usd_vnd_rate
 from src.features import DataTransformer
-from src.ai_models import PositionalEmbedding, TimeDecayAttention, MultiTaskModel, UncertaintyWeightsLayer
+from src.ai_models import PositionalEmbedding, TimeDecayAttention, MultiTaskModel, UncertaintyWeightsLayer, CustomLambda
 
 USD_TO_VND = get_realtime_usd_vnd_rate()
 LOOKBACK_WINDOW = 45
@@ -58,7 +58,8 @@ def run_prediction_for_ticker(ticker):
                 'PositionalEmbedding': PositionalEmbedding,
                 'TimeDecayAttention': TimeDecayAttention,
                 'MultiTaskModel': MultiTaskModel,
-                'UncertaintyWeightsLayer': UncertaintyWeightsLayer
+                'UncertaintyWeightsLayer': UncertaintyWeightsLayer,
+                'Lambda': CustomLambda
             },
             safe_mode=False
         )

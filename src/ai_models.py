@@ -3,31 +3,46 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 import numpy as np
 import tensorflow as tf
 
-# Monkeypatch Lambda layer shape inference to fix Keras 3 deserialization shape issues
-original_lambda_compute_shape = tf.keras.layers.Lambda.compute_output_shape
+# Thay thế tầng Lambda để tránh việc Keras 3 gọi eval/compile mã bytecode của python lambda,
+# giúp bypass hoàn toàn lỗi SystemError: no locals found khi load_model trên Python 3.12+.
+@tf.keras.utils.register_keras_serializable()
+class CustomLambda(tf.keras.layers.Layer):
+    def __init__(self, **kwargs):
+        for key in ['function', 'function_type', 'output_shape', 'module']:
+            kwargs.pop(key, None)
+        super().__init__(**kwargs)
 
-def patched_lambda_compute_shape(self, input_shape):
-    if isinstance(input_shape, list) and len(input_shape) == 1:
-        shape_to_use = input_shape[0]
-    else:
-        shape_to_use = input_shape
-        
-    name = getattr(self, "name", "")
-    if name == "slice_price":
-        return (shape_to_use[0], shape_to_use[1], 12)
-    elif name == "slice_volume":
-        return (shape_to_use[0], shape_to_use[1], 6)
-    elif name == "slice_tech":
-        return (shape_to_use[0], shape_to_use[1], 16)
-    elif name == "slice_flow_div":
-        return (shape_to_use[0], shape_to_use[1], 8)
-        
-    try:
-        return original_lambda_compute_shape(self, input_shape)
-    except Exception:
-        return (shape_to_use[0], shape_to_use[1], None)
+    def call(self, inputs):
+        name = getattr(self, 'name', '')
+        if 'slice_price' in name:
+            return inputs[:, :, 0:12]
+        elif 'slice_volume' in name:
+            return inputs[:, :, 12:18]
+        elif 'slice_tech' in name:
+            return inputs[:, :, 18:34]
+        elif 'slice_flow_div' in name:
+            return inputs[:, :, 34:42]
+        return inputs
 
-tf.keras.layers.Lambda.compute_output_shape = patched_lambda_compute_shape
+    def compute_output_shape(self, input_shape):
+        if isinstance(input_shape, list) and len(input_shape) == 1:
+            input_shape = input_shape[0]
+        name = getattr(self, 'name', '')
+        if 'slice_price' in name:
+            return (input_shape[0], input_shape[1], 12)
+        elif 'slice_volume' in name:
+            return (input_shape[0], input_shape[1], 6)
+        elif 'slice_tech' in name:
+            return (input_shape[0], input_shape[1], 16)
+        elif 'slice_flow_div' in name:
+            return (input_shape[0], input_shape[1], 8)
+        return input_shape
+
+    def get_config(self):
+        return super().get_config()
+
+# Đăng ký đè tầng Lambda toàn cục trong Keras
+tf.keras.utils.get_custom_objects()['Lambda'] = CustomLambda
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import (
     Dense, Dropout, Input, LayerNormalization,
