@@ -58,6 +58,61 @@ class CustomLambda(tf.keras.layers.Layer):
 
 # Đăng ký đè tầng Lambda toàn cục trong Keras
 tf.keras.utils.get_custom_objects()['Lambda'] = CustomLambda
+
+# Monkeypatch built-in tf.keras.layers.Lambda to handle dynamic shapes in Keras 3 load_model
+original_lambda_call = tf.keras.layers.Lambda.call
+original_lambda_compute_output_shape = tf.keras.layers.Lambda.compute_output_shape
+
+def patched_lambda_call(self, inputs, *args, **kwargs):
+    name = getattr(self, 'name', '')
+    if name and any(slice_name in name for slice_name in ['slice_price', 'slice_volume', 'slice_tech', 'slice_flow_div']):
+        if isinstance(inputs, list) and len(inputs) == 1:
+            inputs = inputs[0]
+        num_features = inputs.shape[-1]
+        if num_features is None:
+            num_features = 44
+            
+        if 'slice_price' in name:
+            return inputs[:, :, 0:12]
+        elif 'slice_volume' in name:
+            return inputs[:, :, 12:18]
+        elif 'slice_tech' in name:
+            if num_features == 42:
+                return inputs[:, :, 18:34]
+            else:
+                return inputs[:, :, 18:36]
+        elif 'slice_flow_div' in name:
+            if num_features == 42:
+                return inputs[:, :, 34:42]
+            else:
+                return inputs[:, :, 36:44]
+    return original_lambda_call(self, inputs, *args, **kwargs)
+
+def patched_lambda_compute_output_shape(self, input_shape):
+    name = getattr(self, 'name', '')
+    if name and any(slice_name in name for slice_name in ['slice_price', 'slice_volume', 'slice_tech', 'slice_flow_div']):
+        if isinstance(input_shape, list) and len(input_shape) == 1:
+            input_shape = input_shape[0]
+        num_features = input_shape[-1]
+        if num_features is None:
+            num_features = 44
+            
+        if 'slice_price' in name:
+            return (input_shape[0], input_shape[1], 12)
+        elif 'slice_volume' in name:
+            return (input_shape[0], input_shape[1], 6)
+        elif 'slice_tech' in name:
+            if num_features == 42:
+                return (input_shape[0], input_shape[1], 16)
+            else:
+                return (input_shape[0], input_shape[1], 18)
+        elif 'slice_flow_div' in name:
+            return (input_shape[0], input_shape[1], 8)
+    return original_lambda_compute_output_shape(self, input_shape)
+
+tf.keras.layers.Lambda.call = patched_lambda_call
+tf.keras.layers.Lambda.compute_output_shape = patched_lambda_compute_output_shape
+
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import (
     Dense, Dropout, Input, LayerNormalization,
