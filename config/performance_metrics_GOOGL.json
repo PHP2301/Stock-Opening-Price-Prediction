@@ -1,10 +1,11 @@
 {
-    "overall_win_rate": 0.5357142857142857,
-    "total_trades": 28,
-    "profit_factor": 0.5126051367646206,
-    "strat_return": -20.232999041772068,
-    "bh_return": 218.59905349152996,
-    "sharpe": -0.5818137080339102,
-    "max_drawdown": -20.232999041772068,
-    "timestamp": "2026-06-15 00:30:53"
+    "overall_win_rate": 0.5454545454545454,
+    "total_trades": 22,
+    "profit_factor": 1.0239639098672948,
+    "strat_return": 0.7749771170311421,
+    "bh_return": 398.27074626543623,
+    "sharpe": 0.068017344204577,
+    "max_drawdown": -22.018810207734234,
+    "current_drawdown": -0.22018810207734232,
+    "timestamp": "2026-06-16 23:48:14"
 }

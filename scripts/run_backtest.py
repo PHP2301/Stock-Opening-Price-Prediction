@@ -91,32 +91,16 @@ def compute_trade_metrics(trades, commission_pct):
 
 def run_simulation(
     df_test, df_test_extended,
-    X_test, y_test_raw, dt,
-    xgb_model, transformer_model,
+    X_test, dt, transformer_model,
     ticker, commission_pct, slippage_pct,
     threshold_buy=0.0010, threshold_sell=-0.0010,
-    X_train=None, y_train=None,
 ):
 
     trans_pred_raw   = transformer_model.predict(X_test, verbose=0)
     trans_pred_clean = get_return_output(trans_pred_raw)
     trans_returns    = dt.target_scaler.inverse_transform(trans_pred_clean)
 
-    xgb_returns = None
-    if xgb_model is not None:
-        print("   [PREDICT] Đang chạy dự báo trên tập test (sử dụng Rolling Retrain)...")
-        xgb_returns = np.zeros((len(X_test), 3))
-        X_test_today  = X_test[:, -1, :]
-        X_test_hybrid = np.concatenate([trans_pred_clean, X_test_today], axis=1)
-        xgb_pred_scaled = xgb_model.predict(X_test_hybrid)
-        xgb_returns = dt.target_scaler.inverse_transform(xgb_pred_scaled)
-    else:
-        print("   [PREDICT] Đang chạy dự báo trên tập test (chỉ dùng Transformer)...")
-
     # Sanity check
-    if xgb_returns is not None:
-        assert np.abs(xgb_returns).max() < 0.20, \
-            f"[SANITY] XGBoost return bất thường: {np.abs(xgb_returns).max():.4f}"
     assert np.abs(trans_returns).max() < 0.20, \
         f"[SANITY] Transformer return bất thường: {np.abs(trans_returns).max():.4f}"
 
@@ -124,12 +108,7 @@ def run_simulation(
     actual_returns = np.diff(df_test['close'].values[:len(X_test)]) \
                      / (df_test['close'].values[:len(X_test) - 1] + 1e-9)
     corr_trans = np.corrcoef(trans_returns[:-1, 0], actual_returns)[0, 1]
-    if xgb_returns is not None:
-        corr_xgb   = np.corrcoef(xgb_returns[:-1, 0],  actual_returns)[0, 1]
-        print(f"   [DEBUG] Corr XGB-Actual (T+1)={corr_xgb:+.4f} | "
-              f"Corr Trans-Actual (T+1)={corr_trans:+.4f}")
-    else:
-        print(f"   [DEBUG] Corr Trans-Actual (T+1)={corr_trans:+.4f}")
+    print(f"   [DEBUG] Corr Trans-Actual (T+1)={corr_trans:+.4f}")
 
     close_today = df_test['close'].values[:len(X_test)]
     dates       = df_test['date'].values[:len(X_test)]
@@ -166,47 +145,7 @@ def run_simulation(
     portfolio_stop_loss_triggered = False
 
     for i in range(len(X_test) - 1):
-        # Rolling retrain cho XGBoost mỗi 126 phiên (6 tháng)
-        if i > 0 and i % 126 == 0 and X_train is not None and y_train is not None and xgb_model is not None:
-            print(f"      🔄 [ROLLING RETRAIN] Huấn luyện lại XGBoost tại ngày {date_str(dates[i])}...")
-            # Trích xuất predictions cho phần test đã qua
-            X_new_today  = X_test[:i, -1, :]
-            X_new_hybrid = np.concatenate([trans_pred_clean[:i], X_new_today], axis=1)
-            
-            # Chuẩn hóa y_test_raw thành scaled target cho việc huấn luyện
-            y_test_scaled = dt.target_scaler.transform(y_test_raw)
-            y_new_xgb    = y_test_scaled[:i]
-
-            # Trích xuất predictions cho tập train ban đầu
-            X_train_today  = X_train[:, -1, :]
-            trans_pred_train_raw = transformer_model.predict(X_train, verbose=0)
-            trans_pred_train = get_return_output(trans_pred_train_raw)
-            X_train_hybrid = np.concatenate([trans_pred_train, X_train_today], axis=1)
-
-            # Gộp và huấn luyện
-            X_expanded = np.concatenate([X_train_hybrid, X_new_hybrid], axis=0)
-            y_expanded = np.concatenate([y_train, y_new_xgb], axis=0)
-
-            mask = ~np.isnan(y_expanded).any(axis=1)
-            X_expanded = X_expanded[mask]
-            y_expanded = y_expanded[mask]
-
-            from src.ai_models import build_xgboost_optimized
-            xgb_model = build_xgboost_optimized(X_expanded, y_expanded)
-
-            # Tính lại toàn bộ xgb_returns từ ngày i trở đi
-            X_rem_today  = X_test[i:, -1, :]
-            X_rem_hybrid = np.concatenate([trans_pred_clean[i:], X_rem_today], axis=1)
-            xgb_pred_rem_scaled = xgb_model.predict(X_rem_hybrid)
-            xgb_returns[i:] = dt.target_scaler.inverse_transform(xgb_pred_rem_scaled)
-
-        # Tạo dự báo đồng thuận (ensemble) nếu có cả 2 mô hình
-        if xgb_returns is not None:
-            r_1 = 0.5 * trans_returns[i, 0] + 0.5 * xgb_returns[i, 0]
-            r_2 = 0.5 * trans_returns[i, 1] + 0.5 * xgb_returns[i, 1]
-            r_3 = 0.5 * trans_returns[i, 2] + 0.5 * xgb_returns[i, 2]
-        else:
-            r_1, r_2, r_3 = trans_returns[i, 0], trans_returns[i, 1], trans_returns[i, 2]
+        r_1, r_2, r_3 = trans_returns[i, 0], trans_returns[i, 1], trans_returns[i, 2]
 
         sigma = rolling_std[i]
 
@@ -216,6 +155,10 @@ def run_simulation(
         is_mean_rev  = (r_1 < -1.5 * sigma)
 
         is_buy = is_momentum or is_mean_rev
+
+        # S&P 500 Regime Filter Guard
+        if 'sp500_above_ma200' in df_test.columns and df_test['sp500_above_ma200'].values[i] == 0:
+            is_buy = False
 
         if portfolio_stop_loss_triggered:
             is_buy = False
@@ -324,14 +267,7 @@ def run_walk_forward_evaluation(dates, equity, bh_equity):
 
 
 def main():
-    trans_only = True
-    args_cleaned = []
-    for arg in sys.argv:
-        if arg.lower() == "--xgb-hybrid":
-            trans_only = False
-        else:
-            args_cleaned.append(arg)
-
+    args_cleaned = sys.argv
     TICKERS       = ["VNM.VN", "GOOGL", "META"]
     threshold_buy = 0.0010
 
@@ -394,19 +330,13 @@ def main():
         ].reset_index(drop=True)
 
         # Kiểm tra model tồn tại
-        xgb_path   = os.path.join(models_dir, f'xgboost_model_{ticker}.pkl')
         trans_path = os.path.join(models_dir, f'transformer_model_{ticker}.keras')
         feat_path  = os.path.join(models_dir, f'feature_scaler_{ticker}.pkl')
         targ_path  = os.path.join(models_dir, f'target_scaler_{ticker}.pkl')
 
-        if trans_only:
-            if not os.path.exists(trans_path):
-                print(f"❌ Không tìm thấy model Transformer cho {ticker}. Chạy run_training.py trước.")
-                continue
-        else:
-            if not (os.path.exists(xgb_path) and os.path.exists(trans_path)):
-                print(f"❌ Không tìm thấy model cho {ticker}. Chạy run_training.py trước.")
-                continue
+        if not os.path.exists(trans_path):
+            print(f"❌ Không tìm thấy model Transformer cho {ticker}. Chạy run_training.py trước.")
+            continue
 
         # Kiểm tra model có mới hơn config tuning không
         import datetime as dt_module
@@ -426,10 +356,6 @@ def main():
             else:
                 print(f"   ✅ Model đã train SAU tuning — OK")
 
-        xgb_model = None
-        if not trans_only:
-            xgb_model = joblib.load(xgb_path)
-            
         from src.ai_models import PositionalEmbedding, TimeDecayAttention, UncertaintyWeightsLayer, MultiTaskModel
         custom_objects = {
             'PositionalEmbedding': PositionalEmbedding,
@@ -456,10 +382,8 @@ def main():
 
         dates, equity, bh_equity, trades = run_simulation(
             df_test, df_test_extended,
-            X_test, y_test_raw, dt,
-            xgb_model, transformer_model, ticker,
+            X_test, dt, transformer_model, ticker,
             commission_pct, slippage_pct, cur_threshold_buy, cur_threshold_sell,
-            X_train, y_train
         )
 
         metrics              = compute_metrics(equity, bh_equity, dates)
@@ -487,7 +411,7 @@ def main():
         print("-" * 95)
 
         plt.figure(figsize=(12, 6))
-        plt.plot(dates, equity,    label="Hybrid Strategy",
+        plt.plot(dates, equity,    label="Transformer Strategy",
             color='darkgreen', linewidth=2)
         plt.plot(dates, bh_equity, label="Buy & Hold",
             color='grey', linestyle='--', alpha=0.8)

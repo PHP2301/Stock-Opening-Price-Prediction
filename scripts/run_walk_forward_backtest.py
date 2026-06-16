@@ -21,7 +21,7 @@ from src.data_loader import fetch_and_prepare_data, format_vn, get_realtime_usd_
 from src.features import DataTransformer
 from src.ai_models import (
     PositionalEmbedding, TimeDecayAttention,
-    MultiTaskModel, UncertaintyWeightsLayer, build_transformer, build_xgboost_optimized
+    MultiTaskModel, UncertaintyWeightsLayer, build_transformer
 )
 
 USD_TO_VND = get_realtime_usd_vnd_rate()
@@ -93,7 +93,7 @@ def compute_trade_metrics(trades, commission_pct):
 
 def run_simulation(
     df_test, df_test_extended,
-    xgb_returns, trans_returns,
+    trans_returns,
     ticker, commission_pct, slippage_pct,
     threshold_buy=0.0010, threshold_sell=-0.0010,
 ):
@@ -125,18 +125,17 @@ def run_simulation(
     portfolio_stop_loss_triggered = False
 
     for i in range(len(df_test) - 1):
-        if xgb_returns is not None:
-            r_1 = 0.5 * trans_returns[i, 0] + 0.5 * xgb_returns[i, 0]
-            r_2 = 0.5 * trans_returns[i, 1] + 0.5 * xgb_returns[i, 1]
-            r_3 = 0.5 * trans_returns[i, 2] + 0.5 * xgb_returns[i, 2]
-        else:
-            r_1, r_2, r_3 = trans_returns[i, 0], trans_returns[i, 1], trans_returns[i, 2]
+        r_1, r_2, r_3 = trans_returns[i, 0], trans_returns[i, 1], trans_returns[i, 2]
 
         sigma = rolling_std[i]
 
         is_momentum = (r_3 > r_2) and (r_2 > r_1) and (r_1 > threshold_buy)
         is_mean_rev  = (r_1 < -1.5 * sigma)
         is_buy = is_momentum or is_mean_rev
+
+        # S&P 500 Regime Filter Guard
+        if 'sp500_above_ma200' in df_test.columns and df_test['sp500_above_ma200'].values[i] == 0:
+            is_buy = False
 
         if portfolio_stop_loss_triggered:
             is_buy = False
@@ -245,9 +244,7 @@ def main():
     TICKERS       = ["VNM.VN", "GOOGL", "META"]
     threshold_buy = 0.0010
 
-    # Parse arguments
-    args_cleaned = [arg for arg in sys.argv if not arg.startswith("--")]
-    trans_only   = not ("--xgb-hybrid" in sys.argv)
+    args_cleaned = sys.argv
 
     if len(args_cleaned) > 1:
         arg = args_cleaned[1].upper()
@@ -408,21 +405,6 @@ def main():
             # Lưu lại trọng số của window này cho window sau
             previous_weights = transformer_model.get_weights()
 
-            feature_extractor = Model(
-                inputs=transformer_model.inputs,
-                outputs=transformer_model.get_layer("latent_embedding").output,
-            )
-
-            # ── BƯỚC 2: Trích latent features & Huấn luyện XGBoost ──────────────────
-            xgb_model = None
-            if not trans_only:
-                X_train_latent = feature_extractor.predict(X_train_3D, verbose=0)
-                X_train_today  = X_train_3D[:, -1, :]
-                X_train_hybrid = np.concatenate([X_train_latent, X_train_today], axis=1)
-
-                print(f"      🌳 [TRAIN] Huấn luyện Hybrid XGBoost ({X_train_hybrid.shape[1]}-dim)...")
-                xgb_model = build_xgboost_optimized(X_train_hybrid, y_train_3D)
-
             # ── BƯỚC 3: Dự báo out-of-sample cho tập Test năm hiện tại ───────────
             # Ghép 45 ngày trễ từ cuối Train để cung cấp lookback đầy đủ cho các ngày đầu Test
             test_extended_df = pd.concat([train_df.tail(45), test_df], ignore_index=True)
@@ -449,21 +431,10 @@ def main():
             trans_pred_ret   = dt.target_scaler.inverse_transform(trans_pred_clean)
             trans_pred_accum.append(trans_pred_ret)
 
-            # Predict XGBoost
-            if not trans_only:
-                X_test_latent = feature_extractor.predict(X_test_3D, verbose=0)
-                X_test_today  = X_test_3D[:, -1, :]
-                X_test_hybrid = np.concatenate([X_test_latent, X_test_today], axis=1)
-
-                xgb_pred_scaled = xgb_model.predict(X_test_hybrid)
-                xgb_pred_ret     = dt.target_scaler.inverse_transform(xgb_pred_scaled)
-                xgb_pred_accum.append(xgb_pred_ret)
-
             print(f"      ✅ Hoàn thành dự báo out-of-sample {year}!")
 
         # ── BƯỚC 4: Gộp kết quả và chạy Trading Simulation ──────────────────────
         trans_returns_all = np.concatenate(trans_pred_accum, axis=0)
-        xgb_returns_all   = np.concatenate(xgb_pred_accum, axis=0) if not trans_only else None
 
         # Sanity Check
         assert len(trans_returns_all) == len(df_test_all), \
@@ -481,7 +452,7 @@ def main():
         print(f"\n📊 [SIMULATION] Chạy giả lập trên dữ liệu liên tục 2023 → 2026 ({len(df_test_all)} phiên)...")
         dates, equity, bh_equity, trades = run_simulation(
             df_test_all, df_test_extended_all,
-            xgb_returns_all, trans_returns_all,
+            trans_returns_all,
             ticker, commission_pct, slippage_pct,
             cur_threshold_buy, cur_threshold_sell
         )

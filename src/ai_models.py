@@ -3,6 +3,37 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 import numpy as np
 import tensorflow as tf
 
+# Helper dynamic slice indices based on feature count to support feature pruning
+def get_slice_indices(name, num_features):
+    if num_features == 22:
+        if 'slice_price' in name:
+            return 0, 7
+        elif 'slice_volume' in name:
+            return 7, 11
+        elif 'slice_tech' in name:
+            return 11, 18
+        elif 'slice_flow_div' in name:
+            return 18, 22
+    elif num_features == 42:
+        if 'slice_price' in name:
+            return 0, 12
+        elif 'slice_volume' in name:
+            return 12, 18
+        elif 'slice_tech' in name:
+            return 18, 34
+        elif 'slice_flow_div' in name:
+            return 34, 42
+    else: # 44 or default
+        if 'slice_price' in name:
+            return 0, 12
+        elif 'slice_volume' in name:
+            return 12, 18
+        elif 'slice_tech' in name:
+            return 18, 36
+        elif 'slice_flow_div' in name:
+            return 36, 44
+    return None, None
+
 # Thay thế tầng Lambda để tránh việc Keras 3 gọi eval/compile mã bytecode của python lambda,
 # giúp bypass hoàn toàn lỗi SystemError: no locals found khi load_model trên Python 3.12+.
 @tf.keras.utils.register_keras_serializable()
@@ -15,22 +46,11 @@ class CustomLambda(tf.keras.layers.Layer):
     def call(self, inputs):
         num_features = inputs.shape[-1]
         if num_features is None:
-            num_features = 44
+            num_features = 22
         name = getattr(self, 'name', '')
-        if 'slice_price' in name:
-            return inputs[:, :, 0:12]
-        elif 'slice_volume' in name:
-            return inputs[:, :, 12:18]
-        elif 'slice_tech' in name:
-            if num_features == 42:
-                return inputs[:, :, 18:34]
-            else:
-                return inputs[:, :, 18:36]
-        elif 'slice_flow_div' in name:
-            if num_features == 42:
-                return inputs[:, :, 34:42]
-            else:
-                return inputs[:, :, 36:44]
+        start, end = get_slice_indices(name, num_features)
+        if start is not None:
+            return inputs[:, :, start:end]
         return inputs
 
     def compute_output_shape(self, input_shape):
@@ -38,19 +58,11 @@ class CustomLambda(tf.keras.layers.Layer):
             input_shape = input_shape[0]
         num_features = input_shape[-1]
         if num_features is None:
-            num_features = 44
+            num_features = 22
         name = getattr(self, 'name', '')
-        if 'slice_price' in name:
-            return (input_shape[0], input_shape[1], 12)
-        elif 'slice_volume' in name:
-            return (input_shape[0], input_shape[1], 6)
-        elif 'slice_tech' in name:
-            if num_features == 42:
-                return (input_shape[0], input_shape[1], 16)
-            else:
-                return (input_shape[0], input_shape[1], 18)
-        elif 'slice_flow_div' in name:
-            return (input_shape[0], input_shape[1], 8)
+        start, end = get_slice_indices(name, num_features)
+        if start is not None:
+            return (input_shape[0], input_shape[1], end - start)
         return input_shape
 
     def get_config(self):
@@ -70,22 +82,10 @@ def patched_lambda_call(self, inputs, *args, **kwargs):
             inputs = inputs[0]
         num_features = inputs.shape[-1]
         if num_features is None:
-            num_features = 44
-            
-        if 'slice_price' in name:
-            return inputs[:, :, 0:12]
-        elif 'slice_volume' in name:
-            return inputs[:, :, 12:18]
-        elif 'slice_tech' in name:
-            if num_features == 42:
-                return inputs[:, :, 18:34]
-            else:
-                return inputs[:, :, 18:36]
-        elif 'slice_flow_div' in name:
-            if num_features == 42:
-                return inputs[:, :, 34:42]
-            else:
-                return inputs[:, :, 36:44]
+            num_features = 22
+        start, end = get_slice_indices(name, num_features)
+        if start is not None:
+            return inputs[:, :, start:end]
     return original_lambda_call(self, inputs, *args, **kwargs)
 
 def patched_lambda_compute_output_shape(self, input_shape):
@@ -95,19 +95,10 @@ def patched_lambda_compute_output_shape(self, input_shape):
             input_shape = input_shape[0]
         num_features = input_shape[-1]
         if num_features is None:
-            num_features = 44
-            
-        if 'slice_price' in name:
-            return (input_shape[0], input_shape[1], 12)
-        elif 'slice_volume' in name:
-            return (input_shape[0], input_shape[1], 6)
-        elif 'slice_tech' in name:
-            if num_features == 42:
-                return (input_shape[0], input_shape[1], 16)
-            else:
-                return (input_shape[0], input_shape[1], 18)
-        elif 'slice_flow_div' in name:
-            return (input_shape[0], input_shape[1], 8)
+            num_features = 22
+        start, end = get_slice_indices(name, num_features)
+        if start is not None:
+            return (input_shape[0], input_shape[1], end - start)
     return original_lambda_compute_output_shape(self, input_shape)
 
 tf.keras.layers.Lambda.call = patched_lambda_call
@@ -116,7 +107,7 @@ tf.keras.layers.Lambda.compute_output_shape = patched_lambda_compute_output_shap
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import (
     Dense, Dropout, Input, LayerNormalization,
-    Conv1D, Bidirectional, GRU, Multiply, Concatenate
+    Conv1D, Bidirectional, GRU, Multiply, Concatenate, GaussianNoise
 )
 from xgboost import XGBRegressor
 from sklearn.model_selection import TimeSeriesSplit, RandomizedSearchCV
@@ -405,20 +396,27 @@ def build_transformer(input_shape, d_model=128, num_heads=8, key_dim=16, dropout
       - multi_task=False: Functional model thông thường
     """
     inputs = Input(shape=input_shape)
+    # Giai đoạn 1: Noise Injection vào đầu vào để tránh học vẹt
+    x_noise = GaussianNoise(0.02, name="input_noise")(inputs)
     num_features = input_shape[-1]
     if num_features is None:
         num_features = 44
 
-    if num_features == 42:
-        x_price  = tf.keras.layers.Lambda(lambda x: x[:, :,  0:12], output_shape=lambda s: (s[0], s[1], 12), name="slice_price")(inputs)
-        x_volume = tf.keras.layers.Lambda(lambda x: x[:, :, 12:18], output_shape=lambda s: (s[0], s[1], 6), name="slice_volume")(inputs)
-        x_tech   = tf.keras.layers.Lambda(lambda x: x[:, :, 18:34], output_shape=lambda s: (s[0], s[1], 16), name="slice_tech")(inputs)
-        x_flow_div = tf.keras.layers.Lambda(lambda x: x[:, :, 34:42], output_shape=lambda s: (s[0], s[1], 8), name="slice_flow_div")(inputs)
+    if num_features == 22:
+        x_price  = tf.keras.layers.Lambda(lambda x: x[:, :,  0:7],  output_shape=lambda s: (s[0], s[1], 7),  name="slice_price")(x_noise)
+        x_volume = tf.keras.layers.Lambda(lambda x: x[:, :,  7:11], output_shape=lambda s: (s[0], s[1], 4),  name="slice_volume")(x_noise)
+        x_tech   = tf.keras.layers.Lambda(lambda x: x[:, :, 11:18], output_shape=lambda s: (s[0], s[1], 7),  name="slice_tech")(x_noise)
+        x_flow_div = tf.keras.layers.Lambda(lambda x: x[:, :, 18:22], output_shape=lambda s: (s[0], s[1], 4), name="slice_flow_div")(x_noise)
+    elif num_features == 42:
+        x_price  = tf.keras.layers.Lambda(lambda x: x[:, :,  0:12], output_shape=lambda s: (s[0], s[1], 12), name="slice_price")(x_noise)
+        x_volume = tf.keras.layers.Lambda(lambda x: x[:, :, 12:18], output_shape=lambda s: (s[0], s[1], 6), name="slice_volume")(x_noise)
+        x_tech   = tf.keras.layers.Lambda(lambda x: x[:, :, 18:34], output_shape=lambda s: (s[0], s[1], 16), name="slice_tech")(x_noise)
+        x_flow_div = tf.keras.layers.Lambda(lambda x: x[:, :, 34:42], output_shape=lambda s: (s[0], s[1], 8), name="slice_flow_div")(x_noise)
     else:
-        x_price  = tf.keras.layers.Lambda(lambda x: x[:, :,  0:12], output_shape=lambda s: (s[0], s[1], 12), name="slice_price")(inputs)
-        x_volume = tf.keras.layers.Lambda(lambda x: x[:, :, 12:18], output_shape=lambda s: (s[0], s[1], 6), name="slice_volume")(inputs)
-        x_tech   = tf.keras.layers.Lambda(lambda x: x[:, :, 18:36], output_shape=lambda s: (s[0], s[1], 18), name="slice_tech")(inputs)
-        x_flow_div = tf.keras.layers.Lambda(lambda x: x[:, :, 36:44], output_shape=lambda s: (s[0], s[1], 8), name="slice_flow_div")(inputs)
+        x_price  = tf.keras.layers.Lambda(lambda x: x[:, :,  0:12], output_shape=lambda s: (s[0], s[1], 12), name="slice_price")(x_noise)
+        x_volume = tf.keras.layers.Lambda(lambda x: x[:, :, 12:18], output_shape=lambda s: (s[0], s[1], 6), name="slice_volume")(x_noise)
+        x_tech   = tf.keras.layers.Lambda(lambda x: x[:, :, 18:36], output_shape=lambda s: (s[0], s[1], 18), name="slice_tech")(x_noise)
+        x_flow_div = tf.keras.layers.Lambda(lambda x: x[:, :, 36:44], output_shape=lambda s: (s[0], s[1], 8), name="slice_flow_div")(x_noise)
 
     def branch(x, filters, num_heads_branch, key_dim_branch, gru_units, latent_dim, name):
         x = Conv1D(filters, 3, padding='same', activation='relu',
@@ -436,17 +434,23 @@ def build_transformer(input_shape, d_model=128, num_heads=8, key_dim=16, dropout
         return Dense(latent_dim, activation='relu', name=name,
                      kernel_regularizer=tf.keras.regularizers.l2(1e-4))(x)
 
-    p_emb = branch(x_price,  64, num_heads, key_dim, 16, 16, "latent_price")
-    v_emb = branch(x_volume, 32, num_heads, key_dim,  8,  8, "latent_volume")
-    t_emb = branch(x_tech,   32, num_heads, key_dim,  8,  8, "latent_tech")
-    f_emb = branch(x_flow_div, 32, num_heads, key_dim,  8,  8, "latent_flow_div")
+    if num_features == 22:
+        p_emb = branch(x_price,  32, num_heads, key_dim, 12, 12, "latent_price")
+        v_emb = branch(x_volume, 16, num_heads, key_dim,  6,  6, "latent_volume")
+        t_emb = branch(x_tech,   16, num_heads, key_dim,  6,  6, "latent_tech")
+        f_emb = branch(x_flow_div, 16, num_heads, key_dim,  6,  6, "latent_flow_div")
+    else:
+        p_emb = branch(x_price,  64, num_heads, key_dim, 16, 16, "latent_price")
+        v_emb = branch(x_volume, 32, num_heads, key_dim,  8,  8, "latent_volume")
+        t_emb = branch(x_tech,   32, num_heads, key_dim,  8,  8, "latent_tech")
+        f_emb = branch(x_flow_div, 32, num_heads, key_dim,  8,  8, "latent_flow_div")
 
     embedding = Concatenate(name="latent_embedding")([p_emb, v_emb, t_emb, f_emb])
 
     if multi_task:
         ew    = UncertaintyWeightsLayer(name="uncertainty_weights")(embedding)
-        out_r = Dense(3, name="output_return")(ew)
-        out_s = Dense(3, name="output_spread")(ew)
+        out_r = Dense(3, name="output_return", kernel_regularizer=tf.keras.regularizers.l2(1e-4))(ew)
+        out_s = Dense(3, name="output_spread", kernel_regularizer=tf.keras.regularizers.l2(1e-4))(ew)
 
         # Backbone là Functional model thuần — serialize được
         backbone = Model(inputs=inputs, outputs=[out_r, out_s], name="backbone")
@@ -460,7 +464,7 @@ def build_transformer(input_shape, d_model=128, num_heads=8, key_dim=16, dropout
         model(dummy, training=False)
         return model
     else:
-        out_r = Dense(3, name="output_return")(embedding)
+        out_r = Dense(3, name="output_return", kernel_regularizer=tf.keras.regularizers.l2(1e-4))(embedding)
         model = Model(inputs=inputs, outputs=out_r)
         model.compile(
             optimizer=tf.keras.optimizers.Adam(learning_rate),

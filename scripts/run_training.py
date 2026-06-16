@@ -133,7 +133,7 @@ def main():
             TICKERS = [t for t in TICKERS if t.upper() == arg]
 
     callbacks_main = [
-        EarlyStopping(monitor='val_loss', patience=25, restore_best_weights=True, verbose=0),
+        EarlyStopping(monitor='val_loss', patience=12, restore_best_weights=True, verbose=0),
         LearningRateScheduler(cosine_decay, verbose=0),
     ]
 
@@ -230,7 +230,7 @@ def main():
                 X_train_p1,
                 {"output_return": y_train_p1, "output_spread": y_train_spread_p1},
                 validation_data=(X_val_p1, {"output_return": y_val_p1, "output_spread": y_val_spread_p1}),
-                epochs=250, batch_size=batch_size, callbacks=callbacks_main, verbose=2,
+                epochs=100, batch_size=batch_size, callbacks=callbacks_main, verbose=2,
             )
 
             # Đánh giá hiệu năng Pha 1 trên năm thứ 6
@@ -351,7 +351,7 @@ def main():
                 X_train_p2,
                 {"output_return": y_train_p2, "output_spread": y_train_spread_p2},
                 validation_data=(X_val_p2, {"output_return": y_val_p2, "output_spread": y_val_spread_p2}),
-                epochs=250, batch_size=batch_size, callbacks=callbacks_main, verbose=2,
+                epochs=100, batch_size=batch_size, callbacks=callbacks_main, verbose=2,
             )
             # Cập nhật DataTransformer chính là DataTransformer Pha 2
             dt = dt_p2

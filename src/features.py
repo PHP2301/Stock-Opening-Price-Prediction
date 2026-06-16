@@ -28,37 +28,51 @@ def kalman_filter(series: pd.Series, R: float = 0.01, Q: float = 1e-5) -> pd.Ser
 
 
 class DataTransformer:
-    def __init__(self, time_steps: int = 45, num_features: int = 44):
+    def __init__(self, time_steps: int = 45, num_features: int = 22):
         self.time_steps = time_steps
         self.feature_scaler = StandardScaler()
         self.target_scaler  = StandardScaler()
         self.spread_scaler  = StandardScaler()
 
-        cols_44 = [
-            # Nhánh 1 — Giá & Động lượng (12)
-            'gap_open', 'open_return', 'buying_pressure', 'shadow_ratio',
-            'intraday_range', 'return_1d', 'return_2d', 'return_3d',
-            'mom_5d', 'mom_10d', 'mom_20d', 'dist_ma50',
-            # Nhánh 2 — Khối lượng & Biến động (6)
-            'volume_change', 'volume_sma_ratio', 'volume_zscore',
-            'ad_line_ratio', 'obv_zscore', 'vol_ratio',
-            # Nhánh 3 — Kỹ thuật, Vĩ mô & Lịch (18)
-            'rsi_14', 'macd_ratio', 'bb_position', 'adx_14', 'stoch_k',
-            'efficiency_ratio', 'vix_lag1', 'bond_yield_lag1',
-            'usdvnd_change', 'vnindex_return_lag1',
-            'sp500_above_ma200', 'nasdaq_12m_return',
-            'day_of_week_sin', 'day_of_week_cos',
-            'month_sin', 'month_cos',
-            'is_quarter_end', 'days_before_tet',
-            # Nhánh 4 — Dòng tiền & Cổ tức (8 mới)
-            'mfi_14', 'dividend_flag', 'days_to_dividend', 'days_after_dividend',
-            'foreign_net_buy_proxy', 'foreign_net_buy_5d', 'foreign_net_buy_20d',
-            'self_net_buy_proxy'
-        ]
-        if num_features == 42:
-            self.feature_cols = [c for c in cols_44 if c not in ['sp500_above_ma200', 'nasdaq_12m_return']]
+        if num_features == 22:
+            self.feature_cols = [
+                # Nhánh 1 — Giá & Động lượng (7)
+                'gap_open', 'open_return', 'buying_pressure', 'shadow_ratio',
+                'intraday_range', 'return_1d', 'dist_ma50',
+                # Nhánh 2 — Khối lượng & Biến động (4)
+                'volume_sma_ratio', 'volume_zscore', 'obv_zscore', 'vol_ratio',
+                # Nhánh 3 — Kỹ thuật, Vĩ mô & Lịch (7)
+                'rsi_14', 'macd_ratio', 'bb_position', 'efficiency_ratio',
+                'vix_lag1', 'bond_yield_lag1', 'sp500_above_ma200',
+                # Nhánh 4 — Dòng tiền & Cổ tức (4)
+                'mfi_14', 'dividend_flag', 'foreign_net_buy_5d', 'self_net_buy_proxy'
+            ]
         else:
-            self.feature_cols = cols_44
+            cols_44 = [
+                # Nhánh 1 — Giá & Động lượng (12)
+                'gap_open', 'open_return', 'buying_pressure', 'shadow_ratio',
+                'intraday_range', 'return_1d', 'return_2d', 'return_3d',
+                'mom_5d', 'mom_10d', 'mom_20d', 'dist_ma50',
+                # Nhánh 2 — Khối lượng & Biến động (6)
+                'volume_change', 'volume_sma_ratio', 'volume_zscore',
+                'ad_line_ratio', 'obv_zscore', 'vol_ratio',
+                # Nhánh 3 — Kỹ thuật, Vĩ mô & Lịch (18)
+                'rsi_14', 'macd_ratio', 'bb_position', 'adx_14', 'stoch_k',
+                'efficiency_ratio', 'vix_lag1', 'bond_yield_lag1',
+                'usdvnd_change', 'vnindex_return_lag1',
+                'sp500_above_ma200', 'nasdaq_12m_return',
+                'day_of_week_sin', 'day_of_week_cos',
+                'month_sin', 'month_cos',
+                'is_quarter_end', 'days_before_tet',
+                # Nhánh 4 — Dòng tiền & Cổ tức (8 mới)
+                'mfi_14', 'dividend_flag', 'days_to_dividend', 'days_after_dividend',
+                'foreign_net_buy_proxy', 'foreign_net_buy_5d', 'foreign_net_buy_20d',
+                'self_net_buy_proxy'
+            ]
+            if num_features == 42:
+                self.feature_cols = [c for c in cols_44 if c not in ['sp500_above_ma200', 'nasdaq_12m_return']]
+            else:
+                self.feature_cols = cols_44
             
         self.target_cols = ['target_return_1d', 'target_return_2d', 'target_return_3d']
         self.spread_cols = ['target_spread_1d', 'target_spread_2d', 'target_spread_3d']
@@ -202,8 +216,10 @@ class DataTransformer:
         for col in self.feature_cols:
             df_out[col] = df_out[col].ffill().bfill().fillna(0.0)
 
-        df_out['days_to_dividend']    = df_out['days_to_dividend'].fillna(60.0)
-        df_out['days_after_dividend'] = df_out['days_after_dividend'].fillna(60.0)
+        if 'days_to_dividend' in df_out.columns:
+            df_out['days_to_dividend']    = df_out['days_to_dividend'].fillna(60.0)
+        if 'days_after_dividend' in df_out.columns:
+            df_out['days_after_dividend'] = df_out['days_after_dividend'].fillna(60.0)
 
         return df_out[self.feature_cols]
 

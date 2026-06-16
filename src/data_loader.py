@@ -170,7 +170,7 @@ def fetch_and_prepare_data(
     df_usd_vnd = None
     try:
         print(f"Đang tải tỷ giá USD/VND (USDVND=X) từ {start_date} đến {end_date}...")
-        raw_rate = yf.download("USDVND=X", start=start_date, end=end_date, progress=False)
+        raw_rate = yf.download("USDVND=X", start=start_date, end=end_date, progress=False, timeout=10)
         if not raw_rate.empty:
             df_usd_vnd = raw_rate.reset_index()
             if isinstance(df_usd_vnd.columns, pd.MultiIndex):
@@ -189,7 +189,7 @@ def fetch_and_prepare_data(
     df_yf = None
     try:
         print(f"Đang tải Yahoo Finance: {ticker}...")
-        raw_data = yf.download(ticker, start=start_date, end=end_date, progress=True)
+        raw_data = yf.download(ticker, start=start_date, end=end_date, progress=True, timeout=10)
         if not raw_data.empty:
             df_yf = raw_data.reset_index()
             if isinstance(df_yf.columns, pd.MultiIndex):
@@ -296,7 +296,7 @@ def fetch_and_prepare_data(
 
     def _load_yf_series(sym, col_rename, pct_change=False):
         try:
-            raw = yf.download(sym, start=start_date, end=end_date, progress=False)
+            raw = yf.download(sym, start=start_date, end=end_date, progress=False, timeout=10)
             if raw.empty:
                 return pd.DataFrame(columns=['date', col_rename])
             tmp = raw.reset_index()
