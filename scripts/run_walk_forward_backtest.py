@@ -204,7 +204,8 @@ def run_simulation(
         drawdown = (cur_equity - max_equity_peak) / max_equity_peak
         if drawdown <= -0.20 and not portfolio_stop_loss_triggered:
             portfolio_stop_loss_triggered = True
-            print(f"      🚨 [PORTFOLIO STOP-LOSS] Drawdown chạm {drawdown*100:.2f}% vào ngày {date_str(dates[i])} (Đỉnh: {max_equity_peak:,.2f} VNĐ, Hiện tại: {cur_equity:,.2f} VNĐ). Kích hoạt dừng lỗ toàn bộ danh mục và ngưng giao dịch.")
+            currency_label = "VNĐ" if "VNM" in ticker.upper() else "USD"
+            print(f"      🚨 [PORTFOLIO STOP-LOSS] Drawdown chạm {drawdown*100:.2f}% vào ngày {date_str(dates[i])} (Đỉnh: {max_equity_peak:,.2f} {currency_label}, Hiện tại: {cur_equity:,.2f} {currency_label}). Kích hoạt dừng lỗ toàn bộ danh mục và ngưng giao dịch.")
             if position == 1:
                 cash     = shares * sell_price * (1 - commission_pct)
                 shares   = 0.0
@@ -501,8 +502,9 @@ def main():
         plt.plot(dates, equity, label="Rolling Walk-Forward Strategy", color='darkgreen', linewidth=2)
         plt.plot(dates, bh_equity, label="Buy & Hold", color='grey', linestyle='--', alpha=0.8)
         plt.title(f"Rolling Walk-Forward Equity Curve — {ticker}", fontsize=13, fontweight='bold')
+        currency_label = "VNĐ" if "VNM" in ticker.upper() else "USD"
         plt.xlabel("Ngày")
-        plt.ylabel("Tài sản (VNĐ)")
+        plt.ylabel(f"Tài sản ({currency_label})")
         plt.legend()
         plt.grid(True, alpha=0.25)
         plot_path = os.path.join(figures_dir, f'walk_forward_equity_curve_{ticker}.png')

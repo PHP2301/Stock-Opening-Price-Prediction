@@ -1436,3 +1436,38 @@ Khuyến nghị cuối cùng: HOLD (Độ tự tin: 50.0%)
 Lập luận: Tín hiệu thị trường đang trái chiều và chưa rõ ràng; khuyến nghị tiếp tục đứng ngoài quan sát để bảo toàn dòng tiền.
 --------------------------------------------------
 
+=== BẢN GHI DỰ BÁO 3 NGÀY & MULTI-AGENT REPORT (2026-06-20 16:36:38) ===
+Mã chứng khoán: META
+Giá đóng cửa gần nhất (2026-06-18): $577.22 USD
+Rủi ro biến động: Cao (Nguy hiểm - Biến động cực mạnh) 🔴 (Tỷ lệ: 3.48%)
+Tỷ giá USD/VND quy đổi: 1 USD = 26.120,00 VNĐ
+Dự báo Hybrid XGBoost (3 ngày):
+  ➔ T+1 (2026-06-19): $578.99 USD (📈 TĂNG (+0.31%)) | Khoảng an toàn: [$548.82 USD - $609.17 USD]
+  ➔ T+2 (2026-06-22): $582.32 USD (📈 TĂNG (+0.88%)) | Khoảng an toàn: [$552.14 USD - $612.49 USD]
+  ➔ T+3 (2026-06-23): $582.28 USD (📈 TĂNG (+0.88%)) | Khoảng an toàn: [$552.10 USD - $612.45 USD]
+
+🤖 BÁO CÁO MULTI-AGENT:
+Khuyến nghị cuối cùng: HOLD (Độ tự tin: 50.0%)
+  * SL tham chiếu: $536.99 USD (-6.97%)
+  * TP tham chiếu: $657.68 USD (+13.94%)
+  * Phân bổ Kelly: 0.00%
+Lập luận: Tín hiệu thị trường đang trái chiều và chưa rõ ràng; khuyến nghị tiếp tục đứng ngoài quan sát để bảo toàn dòng tiền.
+--------------------------------------------------
+
+=== BẢN GHI DỰ BÁO 3 NGÀY & MULTI-AGENT REPORT (2026-06-20 16:38:57) ===
+Mã chứng khoán: VNM.VN
+Giá đóng cửa gần nhất (2026-06-19): 59.000,00 VNĐ
+Rủi ro biến động: Thấp (An toàn - Thị trường ổn định) 🟢 (Tỷ lệ: 1.28%)
+Dự báo Hybrid XGBoost (3 ngày):
+  ➔ T+1 (2026-06-22): 59.035,12 VNĐ (📈 TĂNG (+0.06%)) | Khoảng an toàn: [57.900,36 VNĐ - 60.169,87 VNĐ]
+  ➔ T+2 (2026-06-23): 58.930,54 VNĐ (📉 GIẢM (-0.12%)) | Khoảng an toàn: [57.795,79 VNĐ - 60.065,30 VNĐ]
+  ➔ T+3 (2026-06-24): 58.904,07 VNĐ (📉 GIẢM (-0.16%)) | Khoảng an toàn: [57.769,32 VNĐ - 60.038,82 VNĐ]
+
+🤖 BÁO CÁO MULTI-AGENT:
+Khuyến nghị cuối cùng: HOLD (Độ tự tin: 50.0%)
+  * SL tham chiếu: 57.487,00 VNĐ (-2.56%)
+  * TP tham chiếu: 62.026,01 VNĐ (+5.13%)
+  * Phân bổ Kelly: 0.00%
+Lập luận: Tín hiệu thị trường đang trái chiều và chưa rõ ràng; khuyến nghị tiếp tục đứng ngoài quan sát để bảo toàn dòng tiền.
+--------------------------------------------------
+

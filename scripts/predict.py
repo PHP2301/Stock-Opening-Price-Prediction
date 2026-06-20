@@ -29,6 +29,12 @@ from src.ai_models import PositionalEmbedding, TimeDecayAttention, MultiTaskMode
 USD_TO_VND = get_realtime_usd_vnd_rate()
 LOOKBACK_WINDOW = 45
 
+def format_price(value, ticker):
+    if "VNM" in ticker.upper():
+        return f"{format_vn(value)} VNĐ"
+    else:
+        return f"${value:,.2f} USD"
+
 def run_prediction_for_ticker(ticker):
     print(f"\n🔮 BẮT ĐẦU CHẠY DỰ BÁO GIÁ MỞ CỬA CHO MÃ: {ticker}")
     print(f"💵 Tỷ giá USD/VND hiện tại: {format_vn(USD_TO_VND)} VNĐ\n")
@@ -213,19 +219,14 @@ def run_prediction_for_ticker(ticker):
         
         # In kết quả trực tiếp ra màn hình cho thân thiện
         print(f"📊 KẾT QUẢ DỰ BÁO 3 NGÀY CHO MÃ: {ticker}")
-        print(f"  💵 Giá đóng cửa gần nhất ({last_date}): {format_vn(last_close)} VNĐ")
+        print(f"  💵 Giá đóng cửa gần nhất ({last_date}): {format_price(last_close, ticker)}")
         print(f"  ⚠️  Mức độ rủi ro biến động: {risk_level} ({risk_ratio:.2f}%)")
         if "VNM" not in ticker.upper():
-            print(f"  💵 Quy đổi USD: ${last_close/USD_TO_VND:,.2f} USD (Tỷ giá: {format_vn(USD_TO_VND)} VNĐ)")
-            print("  🌳 Dự báo Hybrid XGBoost (Chuỗi 3 ngày):")
-            for h in range(3):
-                trend = f"📈 TĂNG ({trans_return_future[h]*100:+.2f}%)" if trans_vals[h] >= last_close else f"📉 GIẢM ({trans_return_future[h]*100:+.2f}%)"
-                print(f"     ➔ T+{h+1} ({next_dates[h]}): {format_vn(trans_vals[h])} VNĐ (${trans_vals[h]/USD_TO_VND:.2f} USD) | {trend}")
-        else:
-            print("  🌳 Dự báo Hybrid XGBoost (Chuỗi 3 ngày):")
-            for h in range(3):
-                trend = f"📈 TĂNG ({trans_return_future[h]*100:+.2f}%)" if trans_vals[h] >= last_close else f"📉 GIẢM ({trans_return_future[h]*100:+.2f}%)"
-                print(f"     ➔ T+{h+1} ({next_dates[h]}): {format_vn(trans_vals[h])} VNĐ | {trend}")
+            print(f"  💵 Tỷ giá quy chiếu: {format_vn(USD_TO_VND)} VNĐ/USD")
+        print("  🌳 Dự báo Hybrid XGBoost (Chuỗi 3 ngày):")
+        for h in range(3):
+            trend = f"📈 TĂNG ({trans_return_future[h]*100:+.2f}%)" if trans_vals[h] >= last_close else f"📉 GIẢM ({trans_return_future[h]*100:+.2f}%)"
+            print(f"     ➔ T+{h+1} ({next_dates[h]}): {format_price(trans_vals[h], ticker)} | {trend}")
 
         print("\n==========================================================================")
         print("🤖 BÁO CÁO HỆ THỐNG MULTI-AGENT (PydanticAI & TradingAgents)")
@@ -285,14 +286,14 @@ def run_prediction_for_ticker(ticker):
             p_val = kelly_results["p"]
 
         if decision.action == "BUY":
-            print(f"   ➔ Cắt lỗ (SL)  : {format_vn(decision.stop_loss)} VNĐ ({loss_pct:+.2f}%)")
-            print(f"   ➔ Chốt lời (TP): {format_vn(decision.take_profit)} VNĐ ({profit_pct:+.2f}%)")
+            print(f"   ➔ Cắt lỗ (SL)  : {format_price(decision.stop_loss, ticker)} ({loss_pct:+.2f}%)")
+            print(f"   ➔ Chốt lời (TP): {format_price(decision.take_profit, ticker)} ({profit_pct:+.2f}%)")
             print(f"   ➔ Tỷ lệ R/R    : 1:{R_val:.2f}")
             print(f"   ➔ Xác suất Kelly: {p_val*100:.2f}% (Orchestrator: {decision.confidence_score*100:.1f}%, Lịch sử: {win_rate_history*100:.2f}%)")
             print(f"   ➔ Phân bổ vốn  : {kelly_size_pct:.2f}% tài khoản (Half-Kelly, Cap 25%)")
         else:
-            print(f"   ➔ SL tham chiếu: {format_vn(ref_sl)} VNĐ ({loss_pct:+.2f}%)")
-            print(f"   ➔ TP tham chiếu: {format_vn(ref_tp)} VNĐ ({profit_pct:+.2f}%)")
+            print(f"   ➔ SL tham chiếu: {format_price(ref_sl, ticker)} ({loss_pct:+.2f}%)")
+            print(f"   ➔ TP tham chiếu: {format_price(ref_tp, ticker)} ({profit_pct:+.2f}%)")
             print(f"   ➔ Tỷ lệ R/R    : 1:2.00")
             print(f"   ➔ Phân bổ vốn  : 0.00% tài khoản (Khuyến nghị HOLD/SELL)")
         print(f"   ➔ Lập luận    : {decision.reasoning}")
@@ -301,30 +302,23 @@ def run_prediction_for_ticker(ticker):
         with open(log_path, "a", encoding="utf-8") as f:
             f.write(f"=== BẢN GHI DỰ BÁO 3 NGÀY & MULTI-AGENT REPORT ({timestamp}) ===\n")
             f.write(f"Mã chứng khoán: {ticker}\n")
-            if "VNM" in ticker.upper():
-                f.write(f"Giá đóng cửa gần nhất ({last_date}): {format_vn(last_close)} VNĐ\n")
-                f.write(f"Rủi ro biến động: {risk_level} (Tỷ lệ: {risk_ratio:.2f}%)\n")
-                f.write("Dự báo Hybrid XGBoost (3 ngày):\n")
-                for h in range(3):
-                    trend = f"📈 TĂNG ({trans_return_future[h]*100:+.2f}%)" if trans_vals[h] >= last_close else f"📉 GIẢM ({trans_return_future[h]*100:+.2f}%)"
-                    f.write(f"  ➔ T+{h+1} ({next_dates[h]}): {format_vn(trans_vals[h])} VNĐ ({trend}) | Khoảng an toàn: [{format_vn(trans_lowers[h])} - {format_vn(trans_uppers[h])}] VNĐ\n")
-            else:
-                f.write(f"Giá đóng cửa gần nhất ({last_date}): {format_vn(last_close)} VNĐ (${last_close/USD_TO_VND:,.2f} USD)\n")
-                f.write(f"Rủi ro biến động: {risk_level} (Tỷ lệ: {risk_ratio:.2f}%)\n")
+            f.write(f"Giá đóng cửa gần nhất ({last_date}): {format_price(last_close, ticker)}\n")
+            f.write(f"Rủi ro biến động: {risk_level} (Tỷ lệ: {risk_ratio:.2f}%)\n")
+            if "VNM" not in ticker.upper():
                 f.write(f"Tỷ giá USD/VND quy đổi: 1 USD = {format_vn(USD_TO_VND)} VNĐ\n")
-                f.write("Dự báo Hybrid XGBoost (3 ngày):\n")
-                for h in range(3):
-                    trend = f"📈 TĂNG ({trans_return_future[h]*100:+.2f}%)" if trans_vals[h] >= last_close else f"📉 GIẢM ({trans_return_future[h]*100:+.2f}%)"
-                    f.write(f"  ➔ T+{h+1} ({next_dates[h]}): {format_vn(trans_vals[h])} VNĐ (${trans_vals[h]/USD_TO_VND:.2f} USD) ({trend}) | Khoảng an toàn: [{format_vn(trans_lowers[h])} - {format_vn(trans_uppers[h])}] VNĐ\n")
+            f.write("Dự báo Hybrid XGBoost (3 ngày):\n")
+            for h in range(3):
+                trend = f"📈 TĂNG ({trans_return_future[h]*100:+.2f}%)" if trans_vals[h] >= last_close else f"📉 GIẢM ({trans_return_future[h]*100:+.2f}%)"
+                f.write(f"  ➔ T+{h+1} ({next_dates[h]}): {format_price(trans_vals[h], ticker)} ({trend}) | Khoảng an toàn: [{format_price(trans_lowers[h], ticker)} - {format_price(trans_uppers[h], ticker)}]\n")
             f.write("\n🤖 BÁO CÁO MULTI-AGENT:\n")
             f.write(f"Khuyến nghị cuối cùng: {decision.action} (Độ tự tin: {decision.confidence_score*100:.1f}%)\n")
             if decision.action == "BUY":
-                f.write(f"  * Cắt lỗ (SL)  : {format_vn(decision.stop_loss)} VNĐ ({loss_pct:+.2f}%)\n")
-                f.write(f"  * Chốt lời (TP): {format_vn(decision.take_profit)} VNĐ ({profit_pct:+.2f}%)\n")
+                f.write(f"  * Cắt lỗ (SL)  : {format_price(decision.stop_loss, ticker)} ({loss_pct:+.2f}%)\n")
+                f.write(f"  * Chốt lời (TP): {format_price(decision.take_profit, ticker)} ({profit_pct:+.2f}%)\n")
                 f.write(f"  * Phân bổ Kelly: {kelly_size_pct:.2f}% (Half-Kelly, Cap 25%)\n")
             else:
-                f.write(f"  * SL tham chiếu: {format_vn(ref_sl)} VNĐ ({loss_pct:+.2f}%)\n")
-                f.write(f"  * TP tham chiếu: {format_vn(ref_tp)} VNĐ ({profit_pct:+.2f}%)\n")
+                f.write(f"  * SL tham chiếu: {format_price(ref_sl, ticker)} ({loss_pct:+.2f}%)\n")
+                f.write(f"  * TP tham chiếu: {format_price(ref_tp, ticker)} ({profit_pct:+.2f}%)\n")
                 f.write(f"  * Phân bổ Kelly: 0.00%\n")
             f.write(f"Lập luận: {decision.reasoning}\n")
             f.write("-" * 50 + "\n\n")
@@ -434,20 +428,19 @@ def run_prediction_for_ticker(ticker):
 
             forecast_rows = ""
             for h in range(3):
-                usd_val_text = f" (${trans_vals[h]/USD_TO_VND:.2f} USD)" if "VNM" not in ticker.upper() else ""
-                forecast_rows += f"• T+{h+1} ({next_dates[h]}): <b>{format_vn(trans_vals[h])} VNĐ</b>{usd_val_text} | {trend_str(trans_vals[h])}\n"
+                forecast_rows += f"• T+{h+1} ({next_dates[h]}): <b>{format_price(trans_vals[h], ticker)}</b> | {trend_str(trans_vals[h])}\n"
                 
             sl_tp_desc = ""
             if decision.action == "BUY":
                 sl_tp_desc = (
-                    f"Cắt lỗ (SL)  : <b>{format_vn(decision.stop_loss)} VNĐ</b> ({loss_pct:+.2f}%)\n"
-                    f"Chốt lời (TP): <b>{format_vn(decision.take_profit)} VNĐ</b> ({profit_pct:+.2f}%)\n"
+                    f"Cắt lỗ (SL)  : <b>{format_price(decision.stop_loss, ticker)}</b> ({loss_pct:+.2f}%)\n"
+                    f"Chốt lời (TP): <b>{format_price(decision.take_profit, ticker)}</b> ({profit_pct:+.2f}%)\n"
                     f"Phân bổ Kelly: <b>{kelly_size_pct:.2f}%</b> (Half-Kelly, Cap 25%)"
                 )
             else:
                 sl_tp_desc = (
-                    f"SL tham chiếu: <b>{format_vn(ref_sl)} VNĐ</b> ({loss_pct:+.2f}%)\n"
-                    f"TP tham chiếu: <b>{format_vn(ref_tp)} VNĐ</b> ({profit_pct:+.2f}%)\n"
+                    f"SL tham chiếu: <b>{format_price(ref_sl, ticker)}</b> ({loss_pct:+.2f}%)\n"
+                    f"TP tham chiếu: <b>{format_price(ref_tp, ticker)}</b> ({profit_pct:+.2f}%)\n"
                     f"Phân bổ Kelly: <b>0.00%</b>"
                 )
                 
@@ -457,7 +450,7 @@ def run_prediction_for_ticker(ticker):
                 f"{warning_header}"
                 f"📊 <b>KẾT QUẢ DỰ BÁO GIÁ & MULTI-AGENT - {ticker}</b>\n"
                 f"-----------------------------------------\n"
-                f"💵 Giá đóng cửa gần nhất ({last_date}): <b>{format_vn(last_close)} VNĐ</b>{usd_desc}\n"
+                f"💵 Giá đóng cửa gần nhất ({last_date}): <b>{format_price(last_close, ticker)}</b>\n"
                 f"⚠️ Mức độ rủi ro: {risk_level} ({risk_ratio:.2f}%)\n\n"
                 f"{catalysts_desc}"
                 f"🌳 <b>Dự báo Hybrid XGBoost (3 ngày):</b>\n"

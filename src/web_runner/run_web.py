@@ -83,6 +83,14 @@ def parse_predictions_history(db: Session):
             else:
                 continue
 
+            if "VNM" not in ticker.upper():
+                xgb_val = xgb_val / usd_rate
+                xgb_lower = xgb_lower / usd_rate
+                xgb_upper = xgb_upper / usd_rate
+                trans_val = trans_val / usd_rate
+                trans_lower = trans_lower / usd_rate
+                trans_upper = trans_upper / usd_rate
+
             # Calculate target date
             p_dt = datetime.datetime.strptime(pred_date, "%Y-%m-%d")
             target_date = (p_dt + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
@@ -120,8 +128,8 @@ def import_historical_prices(db: Session):
     print("⏳ Đang tải và import giá lịch sử của watchlist (VNM.VN, GOOGL, META) vào DB...")
     tickers = {
         "VNM.VN": {"name": "Vinamilk", "currency": "VND"},
-        "GOOGL": {"name": "Alphabet Inc.", "currency": "VND"},
-        "META": {"name": "Meta Platforms", "currency": "VND"}
+        "GOOGL": {"name": "Alphabet Inc.", "currency": "USD"},
+        "META": {"name": "Meta Platforms", "currency": "USD"}
     }
     
     usd_rate = get_realtime_usd_vnd_rate()
@@ -156,12 +164,9 @@ def import_historical_prices(db: Session):
             for idx, row in df.iterrows():
                 date_str = idx.strftime("%Y-%m-%d")
                 
-                # Conversion if US stock (VND)
+                # Scale VNM if needed (DNSE < 1000 format)
                 mult = 1.0
-                if "VNM" not in ticker.upper():
-                    mult = usd_rate
-                else:
-                    # check if DNSE chart format has < 1000 scale
+                if "VNM" in ticker.upper():
                     if row["close"] < 1000:
                         mult = 1000.0
                         

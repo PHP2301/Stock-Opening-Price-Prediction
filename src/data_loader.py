@@ -253,17 +253,7 @@ def fetch_and_prepare_data(
             df_yf['date'] = pd.to_datetime(df_yf['date'])
             df_yf = df_yf.sort_values('date').reset_index(drop=True)
             if "VNM" not in ticker.upper():
-                if df_usd_vnd is not None:
-                    df_yf = pd.merge(df_yf, df_usd_vnd, on='date', how='left')
-                    df_yf['rate_close'] = df_yf['rate_close'].ffill().bfill().fillna(fallback_rate)
-                    for col in price_cols:
-                        if col in df_yf.columns:
-                            df_yf[col] = df_yf[col] * df_yf['rate_close']
-                    df_yf = df_yf.drop(columns=['rate_close'])
-                else:
-                    for col in price_cols:
-                        if col in df_yf.columns:
-                            df_yf[col] = df_yf[col] * fallback_rate
+                pass
             print(f"  Yahoo Finance: {len(df_yf)} phiên")
     except Exception as e:
         print(f"Không kết nối được Yahoo Finance: {e}")
@@ -315,17 +305,7 @@ def fetch_and_prepare_data(
                 if not df_dnse.empty and col in df_dnse.columns:
                     df_dnse[col] = df_dnse[col] * 1000
         else:
-            if df_usd_vnd is not None:
-                df_school = pd.merge(df_school, df_usd_vnd, on='date', how='left')
-                df_school['rate_close'] = df_school['rate_close'].ffill().bfill().fillna(fallback_rate)
-                for col in price_cols:
-                    if col in df_school.columns:
-                        df_school[col] = df_school[col] * df_school['rate_close']
-                df_school = df_school.drop(columns=['rate_close'])
-            else:
-                for col in price_cols:
-                    if col in df_school.columns:
-                        df_school[col] = df_school[col] * fallback_rate
+            pass
 
         school_last_date  = df_school['date'].max()
         school_first_date = df_school['date'].min()

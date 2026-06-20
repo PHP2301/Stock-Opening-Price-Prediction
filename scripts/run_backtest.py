@@ -443,7 +443,8 @@ def main():
         plt.plot(dates, equity,    label="Transformer Strategy", color='darkgreen', linewidth=2)
         plt.plot(dates, bh_equity, label="Buy & Hold",           color='grey', linestyle='--', alpha=0.8)
         plt.title(f"Equity Curve — {ticker}", fontsize=13, fontweight='bold')
-        plt.xlabel("Ngày"); plt.ylabel("Tài sản (VNĐ)")
+        currency_label = "VNĐ" if "VNM" in ticker.upper() else "USD"
+        plt.xlabel("Ngày"); plt.ylabel(f"Tài sản ({currency_label})")
         plt.legend(); plt.grid(True, alpha=0.25)
         plot_path = os.path.join(figures_dir, f'backtest_equity_curve_{ticker}.png')
         plt.savefig(plot_path, dpi=300)
