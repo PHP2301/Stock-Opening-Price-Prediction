@@ -1188,3 +1188,251 @@ Khuyến nghị cuối cùng: HOLD (Độ tự tin: 50.0%)
 Lập luận: Tín hiệu thị trường đang trái chiều và chưa rõ ràng; khuyến nghị tiếp tục đứng ngoài quan sát để bảo toàn dòng tiền.
 --------------------------------------------------
 
+=== BẢN GHI DỰ BÁO 3 NGÀY & MULTI-AGENT REPORT (2026-06-18 16:13:14) ===
+Mã chứng khoán: META
+Giá đóng cửa gần nhất (2026-06-12): 14.911.926,72 VNĐ ($571.10 USD)
+Rủi ro biến động: Cao (Nguy hiểm - Biến động cực mạnh) 🔴 (Tỷ lệ: 3.27%)
+Tỷ giá USD/VND quy đổi: 1 USD = 26.111,00 VNĐ
+Dự báo Hybrid XGBoost (3 ngày):
+  ➔ T+1 (2026-06-15): 14.889.516,00 VNĐ ($570.24 USD) (📉 GIẢM (-0.15%)) | Khoảng an toàn: [14.157.860,00 - 15.621.172,00] VNĐ
+  ➔ T+2 (2026-06-16): 15.005.795,00 VNĐ ($574.69 USD) (📈 TĂNG (+0.63%)) | Khoảng an toàn: [14.274.139,00 - 15.737.451,00] VNĐ
+  ➔ T+3 (2026-06-17): 15.059.210,00 VNĐ ($576.74 USD) (📈 TĂNG (+0.99%)) | Khoảng an toàn: [14.327.554,00 - 15.790.866,00] VNĐ
+
+🤖 BÁO CÁO MULTI-AGENT:
+Khuyến nghị cuối cùng: HOLD (Độ tự tin: 50.0%)
+  * SL tham chiếu: 13.936.385,57 VNĐ (-6.54%)
+  * TP tham chiếu: 16.863.009,01 VNĐ (+13.08%)
+  * Phân bổ Kelly: 0.00%
+Lập luận: Tín hiệu thị trường đang trái chiều và chưa rõ ràng; khuyến nghị tiếp tục đứng ngoài quan sát để bảo toàn dòng tiền.
+--------------------------------------------------
+
+=== BẢN GHI DỰ BÁO 3 NGÀY & MULTI-AGENT REPORT (2026-06-18 16:47:35) ===
+Mã chứng khoán: GOOGL
+Giá đóng cửa gần nhất (2026-06-12): 9.468.575,81 VNĐ ($362.63 USD)
+Rủi ro biến động: Trung bình (Biến động nhẹ - Thận trọng) 🟡 (Tỷ lệ: 2.96%)
+Tỷ giá USD/VND quy đổi: 1 USD = 26.111,00 VNĐ
+Dự báo Hybrid XGBoost (3 ngày):
+  ➔ T+1 (2026-06-15): 9.467.270,00 VNĐ ($362.58 USD) (📉 GIẢM (-0.01%)) | Khoảng an toàn: [9.046.898,00 - 9.887.642,00] VNĐ
+  ➔ T+2 (2026-06-16): 9.486.331,00 VNĐ ($363.31 USD) (📈 TĂNG (+0.19%)) | Khoảng an toàn: [9.065.959,00 - 9.906.703,00] VNĐ
+  ➔ T+3 (2026-06-17): 9.533.312,00 VNĐ ($365.11 USD) (📈 TĂNG (+0.68%)) | Khoảng an toàn: [9.112.940,00 - 9.953.684,00] VNĐ
+
+🤖 BÁO CÁO MULTI-AGENT:
+Khuyến nghị cuối cùng: HOLD (Độ tự tin: 50.0%)
+  * SL tham chiếu: 8.908.079,92 VNĐ (-5.92%)
+  * TP tham chiếu: 10.589.567,59 VNĐ (+11.84%)
+  * Phân bổ Kelly: 0.00%
+Lập luận: Tín hiệu thị trường đang trái chiều và chưa rõ ràng; khuyến nghị tiếp tục đứng ngoài quan sát để bảo toàn dòng tiền.
+--------------------------------------------------
+
+=== BẢN GHI DỰ BÁO 3 NGÀY & MULTI-AGENT REPORT (2026-06-18 16:50:04) ===
+Mã chứng khoán: VNM.VN
+Giá đóng cửa gần nhất (2026-06-15): 59.700,00 VNĐ
+Rủi ro biến động: Thấp (An toàn - Thị trường ổn định) 🟢 (Tỷ lệ: 1.33%)
+Dự báo Hybrid XGBoost (3 ngày):
+  ➔ T+1 (2026-06-16): 59.668,98 VNĐ (📉 GIẢM (-0.05%)) | Khoảng an toàn: [58.476,16 - 60.861,80] VNĐ
+  ➔ T+2 (2026-06-17): 59.504,66 VNĐ (📉 GIẢM (-0.33%)) | Khoảng an toàn: [58.311,84 - 60.697,48] VNĐ
+  ➔ T+3 (2026-06-18): 59.496,44 VNĐ (📉 GIẢM (-0.34%)) | Khoảng an toàn: [58.303,62 - 60.689,26] VNĐ
+
+🤖 BÁO CÁO MULTI-AGENT:
+Khuyến nghị cuối cùng: HOLD (Độ tự tin: 50.0%)
+  * SL tham chiếu: 58.109,57 VNĐ (-2.66%)
+  * TP tham chiếu: 62.880,85 VNĐ (+5.33%)
+  * Phân bổ Kelly: 0.00%
+Lập luận: Tín hiệu thị trường đang trái chiều và chưa rõ ràng; khuyến nghị tiếp tục đứng ngoài quan sát để bảo toàn dòng tiền.
+--------------------------------------------------
+
+=== BẢN GHI DỰ BÁO 3 NGÀY & MULTI-AGENT REPORT (2026-06-18 17:06:09) ===
+Mã chứng khoán: VNM.VN
+Giá đóng cửa gần nhất (2026-06-15): 59.700,00 VNĐ
+Rủi ro biến động: Thấp (An toàn - Thị trường ổn định) 🟢 (Tỷ lệ: 1.33%)
+Dự báo Hybrid XGBoost (3 ngày):
+  ➔ T+1 (2026-06-16): 59.668,98 VNĐ (📉 GIẢM (-0.05%)) | Khoảng an toàn: [58.476,16 - 60.861,80] VNĐ
+  ➔ T+2 (2026-06-17): 59.504,66 VNĐ (📉 GIẢM (-0.33%)) | Khoảng an toàn: [58.311,84 - 60.697,48] VNĐ
+  ➔ T+3 (2026-06-18): 59.496,44 VNĐ (📉 GIẢM (-0.34%)) | Khoảng an toàn: [58.303,62 - 60.689,26] VNĐ
+
+🤖 BÁO CÁO MULTI-AGENT:
+Khuyến nghị cuối cùng: HOLD (Độ tự tin: 50.0%)
+  * SL tham chiếu: 58.109,57 VNĐ (-2.66%)
+  * TP tham chiếu: 62.880,85 VNĐ (+5.33%)
+  * Phân bổ Kelly: 0.00%
+Lập luận: Tín hiệu thị trường đang trái chiều và chưa rõ ràng; khuyến nghị tiếp tục đứng ngoài quan sát để bảo toàn dòng tiền.
+--------------------------------------------------
+
+=== BẢN GHI DỰ BÁO 3 NGÀY & MULTI-AGENT REPORT (2026-06-18 17:08:39) ===
+Mã chứng khoán: GOOGL
+Giá đóng cửa gần nhất (2026-06-12): 9.468.575,81 VNĐ ($362.63 USD)
+Rủi ro biến động: Trung bình (Biến động nhẹ - Thận trọng) 🟡 (Tỷ lệ: 2.96%)
+Tỷ giá USD/VND quy đổi: 1 USD = 26.111,00 VNĐ
+Dự báo Hybrid XGBoost (3 ngày):
+  ➔ T+1 (2026-06-15): 9.467.270,00 VNĐ ($362.58 USD) (📉 GIẢM (-0.01%)) | Khoảng an toàn: [9.046.898,00 - 9.887.642,00] VNĐ
+  ➔ T+2 (2026-06-16): 9.486.331,00 VNĐ ($363.31 USD) (📈 TĂNG (+0.19%)) | Khoảng an toàn: [9.065.959,00 - 9.906.703,00] VNĐ
+  ➔ T+3 (2026-06-17): 9.533.312,00 VNĐ ($365.11 USD) (📈 TĂNG (+0.68%)) | Khoảng an toàn: [9.112.940,00 - 9.953.684,00] VNĐ
+
+🤖 BÁO CÁO MULTI-AGENT:
+Khuyến nghị cuối cùng: HOLD (Độ tự tin: 50.0%)
+  * SL tham chiếu: 8.908.079,92 VNĐ (-5.92%)
+  * TP tham chiếu: 10.589.567,59 VNĐ (+11.84%)
+  * Phân bổ Kelly: 0.00%
+Lập luận: Tín hiệu thị trường đang trái chiều và chưa rõ ràng; khuyến nghị tiếp tục đứng ngoài quan sát để bảo toàn dòng tiền.
+--------------------------------------------------
+
+=== BẢN GHI DỰ BÁO 3 NGÀY & MULTI-AGENT REPORT (2026-06-18 17:10:32) ===
+Mã chứng khoán: META
+Giá đóng cửa gần nhất (2026-06-12): 14.911.926,72 VNĐ ($571.10 USD)
+Rủi ro biến động: Cao (Nguy hiểm - Biến động cực mạnh) 🔴 (Tỷ lệ: 3.27%)
+Tỷ giá USD/VND quy đổi: 1 USD = 26.111,00 VNĐ
+Dự báo Hybrid XGBoost (3 ngày):
+  ➔ T+1 (2026-06-15): 14.889.516,00 VNĐ ($570.24 USD) (📉 GIẢM (-0.15%)) | Khoảng an toàn: [14.157.860,00 - 15.621.172,00] VNĐ
+  ➔ T+2 (2026-06-16): 15.005.795,00 VNĐ ($574.69 USD) (📈 TĂNG (+0.63%)) | Khoảng an toàn: [14.274.139,00 - 15.737.451,00] VNĐ
+  ➔ T+3 (2026-06-17): 15.059.210,00 VNĐ ($576.74 USD) (📈 TĂNG (+0.99%)) | Khoảng an toàn: [14.327.554,00 - 15.790.866,00] VNĐ
+
+🤖 BÁO CÁO MULTI-AGENT:
+Khuyến nghị cuối cùng: HOLD (Độ tự tin: 50.0%)
+  * SL tham chiếu: 13.936.385,57 VNĐ (-6.54%)
+  * TP tham chiếu: 16.863.009,01 VNĐ (+13.08%)
+  * Phân bổ Kelly: 0.00%
+Lập luận: Tín hiệu thị trường đang trái chiều và chưa rõ ràng; khuyến nghị tiếp tục đứng ngoài quan sát để bảo toàn dòng tiền.
+--------------------------------------------------
+
+=== BẢN GHI DỰ BÁO 3 NGÀY & MULTI-AGENT REPORT (2026-06-18 17:38:06) ===
+Mã chứng khoán: META
+Giá đóng cửa gần nhất (2026-06-17): 14.893.299,65 VNĐ ($570.38 USD)
+Rủi ro biến động: Cao (Nguy hiểm - Biến động cực mạnh) 🔴 (Tỷ lệ: 3.57%)
+Tỷ giá USD/VND quy đổi: 1 USD = 26.111,00 VNĐ
+Dự báo Hybrid XGBoost (3 ngày):
+  ➔ T+1 (2026-06-18): 14.873.617,00 VNĐ ($569.63 USD) (📉 GIẢM (-0.13%)) | Khoảng an toàn: [14.076.268,00 - 15.670.966,00] VNĐ
+  ➔ T+2 (2026-06-19): 14.874.437,00 VNĐ ($569.66 USD) (📉 GIẢM (-0.13%)) | Khoảng an toàn: [14.077.088,00 - 15.671.786,00] VNĐ
+  ➔ T+3 (2026-06-22): 15.008.683,00 VNĐ ($574.80 USD) (📈 TĂNG (+0.77%)) | Khoảng an toàn: [14.211.334,00 - 15.806.032,00] VNĐ
+
+🤖 BÁO CÁO MULTI-AGENT:
+Khuyến nghị cuối cùng: HOLD (Độ tự tin: 50.0%)
+  * SL tham chiếu: 13.830.167,46 VNĐ (-7.14%)
+  * TP tham chiếu: 17.019.564,03 VNĐ (+14.28%)
+  * Phân bổ Kelly: 0.00%
+Lập luận: Tín hiệu thị trường đang trái chiều và chưa rõ ràng; khuyến nghị tiếp tục đứng ngoài quan sát để bảo toàn dòng tiền.
+--------------------------------------------------
+
+=== BẢN GHI DỰ BÁO 3 NGÀY & MULTI-AGENT REPORT (2026-06-18 17:55:36) ===
+Mã chứng khoán: VNM.VN
+Giá đóng cửa gần nhất (2026-06-18): 59.200,00 VNĐ
+Rủi ro biến động: Thấp (An toàn - Thị trường ổn định) 🟢 (Tỷ lệ: 1.31%)
+Dự báo Hybrid XGBoost (3 ngày):
+  ➔ T+1 (2026-06-19): 59.225,37 VNĐ (📈 TĂNG (+0.04%)) | Khoảng an toàn: [58.061,02 - 60.389,72] VNĐ
+  ➔ T+2 (2026-06-22): 59.072,06 VNĐ (📉 GIẢM (-0.22%)) | Khoảng an toàn: [57.907,71 - 60.236,41] VNĐ
+  ➔ T+3 (2026-06-23): 59.051,56 VNĐ (📉 GIẢM (-0.25%)) | Khoảng an toàn: [57.887,21 - 60.215,91] VNĐ
+
+🤖 BÁO CÁO MULTI-AGENT:
+Khuyến nghị cuối cùng: HOLD (Độ tự tin: 50.0%)
+  * SL tham chiếu: 57.647,53 VNĐ (-2.62%)
+  * TP tham chiếu: 62.304,93 VNĐ (+5.24%)
+  * Phân bổ Kelly: 0.00%
+Lập luận: Tín hiệu thị trường đang trái chiều và chưa rõ ràng; khuyến nghị tiếp tục đứng ngoài quan sát để bảo toàn dòng tiền.
+--------------------------------------------------
+
+=== BẢN GHI DỰ BÁO 3 NGÀY & MULTI-AGENT REPORT (2026-06-18 17:57:15) ===
+Mã chứng khoán: GOOGL
+Giá đóng cửa gần nhất (2026-06-17): 9.545.849,82 VNĐ ($365.59 USD)
+Rủi ro biến động: Trung bình (Biến động nhẹ - Thận trọng) 🟡 (Tỷ lệ: 2.94%)
+Tỷ giá USD/VND quy đổi: 1 USD = 26.111,00 VNĐ
+Dự báo Hybrid XGBoost (3 ngày):
+  ➔ T+1 (2026-06-18): 9.544.962,00 VNĐ ($365.55 USD) (📉 GIẢM (-0.01%)) | Khoảng an toàn: [9.124.101,00 - 9.965.823,00] VNĐ
+  ➔ T+2 (2026-06-19): 9.569.993,00 VNĐ ($366.51 USD) (📈 TĂNG (+0.25%)) | Khoảng an toàn: [9.149.132,00 - 9.990.854,00] VNĐ
+  ➔ T+3 (2026-06-22): 9.605.228,00 VNĐ ($367.86 USD) (📈 TĂNG (+0.62%)) | Khoảng an toàn: [9.184.367,00 - 10.026.089,00] VNĐ
+
+🤖 BÁO CÁO MULTI-AGENT:
+Khuyến nghị cuối cùng: SELL (Độ tự tin: 80.0%)
+  * SL tham chiếu: 8.984.701,56 VNĐ (-5.88%)
+  * TP tham chiếu: 10.668.146,34 VNĐ (+11.76%)
+  * Phân bổ Kelly: 0.00%
+Lập luận: Đồng thuận tín hiệu BÁN ra từ các chuyên gia (Kỹ thuật xấu, Tin tức tiêu cực và Vĩ mô bất ổn).
+--------------------------------------------------
+
+=== BẢN GHI DỰ BÁO 3 NGÀY & MULTI-AGENT REPORT (2026-06-18 17:58:45) ===
+Mã chứng khoán: META
+Giá đóng cửa gần nhất (2026-06-17): 14.893.299,65 VNĐ ($570.38 USD)
+Rủi ro biến động: Cao (Nguy hiểm - Biến động cực mạnh) 🔴 (Tỷ lệ: 3.57%)
+Tỷ giá USD/VND quy đổi: 1 USD = 26.111,00 VNĐ
+Dự báo Hybrid XGBoost (3 ngày):
+  ➔ T+1 (2026-06-18): 14.873.617,00 VNĐ ($569.63 USD) (📉 GIẢM (-0.13%)) | Khoảng an toàn: [14.076.268,00 - 15.670.966,00] VNĐ
+  ➔ T+2 (2026-06-19): 14.874.437,00 VNĐ ($569.66 USD) (📉 GIẢM (-0.13%)) | Khoảng an toàn: [14.077.088,00 - 15.671.786,00] VNĐ
+  ➔ T+3 (2026-06-22): 15.008.683,00 VNĐ ($574.80 USD) (📈 TĂNG (+0.77%)) | Khoảng an toàn: [14.211.334,00 - 15.806.032,00] VNĐ
+
+🤖 BÁO CÁO MULTI-AGENT:
+Khuyến nghị cuối cùng: HOLD (Độ tự tin: 50.0%)
+  * SL tham chiếu: 13.830.167,46 VNĐ (-7.14%)
+  * TP tham chiếu: 17.019.564,03 VNĐ (+14.28%)
+  * Phân bổ Kelly: 0.00%
+Lập luận: Tín hiệu thị trường đang trái chiều và chưa rõ ràng; khuyến nghị tiếp tục đứng ngoài quan sát để bảo toàn dòng tiền.
+--------------------------------------------------
+
+=== BẢN GHI DỰ BÁO 3 NGÀY & MULTI-AGENT REPORT (2026-06-20 08:56:21) ===
+Mã chứng khoán: META
+Giá đóng cửa gần nhất (2026-06-18): 15.160.682,53 VNĐ ($580.42 USD)
+Rủi ro biến động: Cao (Nguy hiểm - Biến động cực mạnh) 🔴 (Tỷ lệ: 3.47%)
+Tỷ giá USD/VND quy đổi: 1 USD = 26.120,00 VNĐ
+Dự báo Hybrid XGBoost (3 ngày):
+  ➔ T+1 (2026-06-19): 15.171.136,00 VNĐ ($580.82 USD) (📈 TĂNG (+0.07%)) | Khoảng an toàn: [14.382.563,00 - 15.959.709,00] VNĐ
+  ➔ T+2 (2026-06-22): 15.270.895,00 VNĐ ($584.64 USD) (📈 TĂNG (+0.73%)) | Khoảng an toàn: [14.482.322,00 - 16.059.468,00] VNĐ
+  ➔ T+3 (2026-06-23): 15.163.137,00 VNĐ ($580.52 USD) (📈 TĂNG (+0.02%)) | Khoảng an toàn: [14.374.564,00 - 15.951.710,00] VNĐ
+
+🤖 BÁO CÁO MULTI-AGENT:
+Khuyến nghị cuối cùng: HOLD (Độ tự tin: 50.0%)
+  * SL tham chiếu: 14.109.251,69 VNĐ (-6.94%)
+  * TP tham chiếu: 17.263.544,22 VNĐ (+13.87%)
+  * Phân bổ Kelly: 0.00%
+Lập luận: Tín hiệu thị trường đang trái chiều và chưa rõ ràng; khuyến nghị tiếp tục đứng ngoài quan sát để bảo toàn dòng tiền.
+--------------------------------------------------
+
+=== BẢN GHI DỰ BÁO 3 NGÀY & MULTI-AGENT REPORT (2026-06-20 16:23:00) ===
+Mã chứng khoán: VNM.VN
+Giá đóng cửa gần nhất (2026-06-19): 59.000,00 VNĐ
+Rủi ro biến động: Thấp (An toàn - Thị trường ổn định) 🟢 (Tỷ lệ: 1.28%)
+Dự báo Hybrid XGBoost (3 ngày):
+  ➔ T+1 (2026-06-22): 59.035,12 VNĐ (📈 TĂNG (+0.06%)) | Khoảng an toàn: [57.900,36 - 60.169,87] VNĐ
+  ➔ T+2 (2026-06-23): 58.930,54 VNĐ (📉 GIẢM (-0.12%)) | Khoảng an toàn: [57.795,79 - 60.065,30] VNĐ
+  ➔ T+3 (2026-06-24): 58.904,07 VNĐ (📉 GIẢM (-0.16%)) | Khoảng an toàn: [57.769,32 - 60.038,82] VNĐ
+
+🤖 BÁO CÁO MULTI-AGENT:
+Khuyến nghị cuối cùng: HOLD (Độ tự tin: 50.0%)
+  * SL tham chiếu: 57.487,00 VNĐ (-2.56%)
+  * TP tham chiếu: 62.026,01 VNĐ (+5.13%)
+  * Phân bổ Kelly: 0.00%
+Lập luận: Tín hiệu thị trường đang trái chiều và chưa rõ ràng; khuyến nghị tiếp tục đứng ngoài quan sát để bảo toàn dòng tiền.
+--------------------------------------------------
+
+=== BẢN GHI DỰ BÁO 3 NGÀY & MULTI-AGENT REPORT (2026-06-20 16:24:45) ===
+Mã chứng khoán: GOOGL
+Giá đóng cửa gần nhất (2026-06-18): 9.666.307,92 VNĐ ($370.07 USD)
+Rủi ro biến động: Trung bình (Biến động nhẹ - Thận trọng) 🟡 (Tỷ lệ: 2.91%)
+Tỷ giá USD/VND quy đổi: 1 USD = 26.120,00 VNĐ
+Dự báo Hybrid XGBoost (3 ngày):
+  ➔ T+1 (2026-06-19): 9.671.752,00 VNĐ ($370.28 USD) (📈 TĂNG (+0.06%)) | Khoảng an toàn: [9.250.532,00 - 10.092.972,00] VNĐ
+  ➔ T+2 (2026-06-22): 9.682.202,00 VNĐ ($370.68 USD) (📈 TĂNG (+0.16%)) | Khoảng an toàn: [9.260.982,00 - 10.103.422,00] VNĐ
+  ➔ T+3 (2026-06-23): 9.749.447,00 VNĐ ($373.26 USD) (📈 TĂNG (+0.86%)) | Khoảng an toàn: [9.328.227,00 - 10.170.667,00] VNĐ
+
+🤖 BÁO CÁO MULTI-AGENT:
+Khuyến nghị cuối cùng: HOLD (Độ tự tin: 50.0%)
+  * SL tham chiếu: 9.104.681,02 VNĐ (-5.81%)
+  * TP tham chiếu: 10.789.561,71 VNĐ (+11.62%)
+  * Phân bổ Kelly: 0.00%
+Lập luận: Tín hiệu thị trường đang trái chiều và chưa rõ ràng; khuyến nghị tiếp tục đứng ngoài quan sát để bảo toàn dòng tiền.
+--------------------------------------------------
+
+=== BẢN GHI DỰ BÁO 3 NGÀY & MULTI-AGENT REPORT (2026-06-20 16:26:05) ===
+Mã chứng khoán: META
+Giá đóng cửa gần nhất (2026-06-18): 15.160.682,53 VNĐ ($580.42 USD)
+Rủi ro biến động: Cao (Nguy hiểm - Biến động cực mạnh) 🔴 (Tỷ lệ: 3.47%)
+Tỷ giá USD/VND quy đổi: 1 USD = 26.120,00 VNĐ
+Dự báo Hybrid XGBoost (3 ngày):
+  ➔ T+1 (2026-06-19): 15.204.960,00 VNĐ ($582.12 USD) (📈 TĂNG (+0.29%)) | Khoảng an toàn: [14.416.387,00 - 15.993.533,00] VNĐ
+  ➔ T+2 (2026-06-22): 15.308.605,00 VNĐ ($586.09 USD) (📈 TĂNG (+0.98%)) | Khoảng an toàn: [14.520.032,00 - 16.097.178,00] VNĐ
+  ➔ T+3 (2026-06-23): 15.293.454,00 VNĐ ($585.51 USD) (📈 TĂNG (+0.88%)) | Khoảng an toàn: [14.504.881,00 - 16.082.027,00] VNĐ
+
+🤖 BÁO CÁO MULTI-AGENT:
+Khuyến nghị cuối cùng: HOLD (Độ tự tin: 50.0%)
+  * SL tham chiếu: 14.109.251,69 VNĐ (-6.94%)
+  * TP tham chiếu: 17.263.544,22 VNĐ (+13.87%)
+  * Phân bổ Kelly: 0.00%
+Lập luận: Tín hiệu thị trường đang trái chiều và chưa rõ ràng; khuyến nghị tiếp tục đứng ngoài quan sát để bảo toàn dòng tiền.
+--------------------------------------------------
+

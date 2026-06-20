@@ -133,8 +133,12 @@ def run_simulation(
         is_mean_rev  = (r_1 < -1.5 * sigma)
         is_buy = is_momentum or is_mean_rev
 
-        # S&P 500 Regime Filter Guard
-        if 'sp500_above_ma200' in df_test.columns and df_test['sp500_above_ma200'].values[i] == 0:
+        # Regime Filter Guard — dùng đúng chỉ số thị trường theo ticker
+        if "VNM" in ticker.upper():
+            regime_col = 'vnm_etf_above_ma200'
+        else:
+            regime_col = 'sp500_above_ma200'
+        if regime_col in df_test.columns and df_test[regime_col].values[i] == 0:
             is_buy = False
 
         if portfolio_stop_loss_triggered:
@@ -233,7 +237,7 @@ def run_walk_forward_evaluation(dates, equity, bh_equity):
     for i in range(3):
         s = i * w
         e = n if i == 2 else (i + 1) * w
-        m  = compute_metrics(equity[s:e+1], bh_equity[s:e+1], dates[s:e])
+        m  = compute_metrics(equity[s:e], bh_equity[s:e], dates[s:e])
         d0 = pd.to_datetime(dates[s]).strftime('%Y-%m-%d')
         d1 = pd.to_datetime(dates[e - 1]).strftime('%Y-%m-%d')
         results.append({"window": f"Window {i+1} ({d0} → {d1})", **m})
@@ -293,7 +297,7 @@ def main():
         cfg_path = os.path.join(ROOT_DIR, 'config', f'best_transformer_params_{ticker}.json')
         if os.path.exists(cfg_path):
             try:
-                with open(cfg_path) as f:
+                with open(cfg_path, 'r', encoding='utf-8-sig') as f:
                     p = json.load(f)
                 d_model       = p.get('d_model', d_model)
                 num_heads     = p.get('num_heads', p.get('heads', num_heads))
@@ -365,30 +369,41 @@ def main():
                 y_va_spread = y_train_spread_3D
 
             # ── BƯỚC 1: Xây dựng & Huấn luyện Transformer ─────────────────────
-            transformer_model = build_transformer(
-                input_shape=(X_train_3D.shape[1], X_train_3D.shape[2]),
-                d_model=d_model,
-                num_heads=num_heads,
-                dropout_rate=dropout_rate,
-                learning_rate=learning_rate,
-            )
-
             if previous_weights is not None:
                 print(f"      [WARM-START] Khởi tạo trọng số từ Window trước để tối ưu hóa học...")
+                # FIX: Build lại với LR thấp (2e-5) để fine-tune nhẹ, tránh catastrophic forgetting
+                transformer_model = build_transformer(
+                    input_shape=(X_train_3D.shape[1], X_train_3D.shape[2]),
+                    d_model=d_model,
+                    num_heads=num_heads,
+                    dropout_rate=dropout_rate,
+                    learning_rate=2e-5,
+                )
                 try:
                     transformer_model.set_weights(previous_weights)
                     epochs_to_run = 25
                     patience_run  = 8
-                    lr_decay = 2e-5
                 except Exception as e:
                     print(f"      ⚠️ Không load được trọng số: {e}, huấn luyện từ đầu.")
+                    transformer_model = build_transformer(
+                        input_shape=(X_train_3D.shape[1], X_train_3D.shape[2]),
+                        d_model=d_model,
+                        num_heads=num_heads,
+                        dropout_rate=dropout_rate,
+                        learning_rate=learning_rate,
+                    )
                     epochs_to_run = 100
                     patience_run  = 15
-                    lr_decay = learning_rate
             else:
+                transformer_model = build_transformer(
+                    input_shape=(X_train_3D.shape[1], X_train_3D.shape[2]),
+                    d_model=d_model,
+                    num_heads=num_heads,
+                    dropout_rate=dropout_rate,
+                    learning_rate=learning_rate,
+                )
                 epochs_to_run = 100
                 patience_run  = 15
-                lr_decay = learning_rate
 
             callbacks_window = [
                 EarlyStopping(monitor='val_loss', patience=patience_run, restore_best_weights=True, verbose=0),

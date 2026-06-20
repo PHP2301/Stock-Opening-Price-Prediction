@@ -18,7 +18,7 @@ Dự án được xây dựng phục vụ nghiên cứu định lượng (quanti
 3. [Thuật ngữ Công nghệ & Trí tuệ Nhân tạo (AI)](#3-thuật-ngữ-công-nghệ--trí-tuệ-nhân-tạo-ai)
 4. [Cấu trúc thư mục](#4-cấu-trúc-thư-mục)
 5. [Luồng xử lý dữ liệu](#5-luồng-xử-lý-dữ-liệu)
-6. [Chi tiết các đặc trưng (42 Features)](#6-chi-tiết-các-đặc-trưng-42-features)
+6. [Chi tiết các đặc trưng (82 đặc trưng - 42 cơ bản & 40 latent)](#6-chi-tiết-các-đặc-trưng-82-đặc-trưng---42-cơ-bản--40-latent)
 7. [Kiến trúc mô hình AI đa nhiệm](#7-kiến-trúc-mô-hình-ai-đa-nhiệm)
 8. [Hệ thống kiểm thử Backtest & Dynamic Slippage](#8-hệ-thống-kiểm-thử-backtest--dynamic-slippage)
 9. [Quản trị rủi ro & Dải bảo vệ ATR](#9-quản-trị-rủi-ro--dải-bảo-vệ-atr)
@@ -81,7 +81,7 @@ Stock-Opening-Price-Prediction/
 ├── reports/
 │   └── figures/                # Biểu đồ so sánh dự báo và backtest equity curve
 ├── scripts/                    # Các script thực thi chính
-│   ├── run_training.py         # Huấn luyện mô hình Hybrid Stacking (Transformer + XGBoost)
+│   ├── run_training_transformer.py # Huấn luyện mô hình Hybrid Stacking (Transformer + XGBoost)
 │   ├── run_backtest.py         # Mô phỏng giao dịch thực tế & kiểm tra Walk-Forward
 │   ├── run_tuning.py           # Tối ưu siêu tham số bằng Optuna độc lập cho từng mã
 │   └── predict.py              # Đưa ra dự báo hàng ngày & kích hoạt Multi-Agent Desk
@@ -106,7 +106,7 @@ graph TD
     B --> C[Bộ lọc tỷ giá 3 lớp]
     C --> D[Quy đổi USD sang VND theo tỷ giá động]
     D --> E["Timezone Sync: shift(1) dữ liệu Mỹ cho mã Việt Nam"]
-    E --> F[Feature Engineering: 42 đặc trưng kỹ thuật, vĩ mô, cổ tức & dòng tiền]
+    E --> F[Feature Engineering: 42 đặc trưng cơ bản + 40 đặc trưng biểu diễn ẩn = Tổng 82 đặc trưng]
     F --> G[Lọc nhiễu Kalman Filter]
     G --> H[StandardScaler + Sliding Window 45 ngày]
     H --> I{Huấn luyện AI đa nhiệm}
@@ -122,7 +122,7 @@ graph TD
 
 ---
 
-## 6. Chi tiết các đặc trưng (42 Features)
+## 6. Chi tiết các đặc trưng (82 đặc trưng - 42 cơ bản & 40 latent)
 
 Đặc trưng đầu vào được chia tách thành **4 nhánh xử lý độc lập** trong kiến trúc mạng nơ-ron:
 
@@ -211,7 +211,7 @@ Giao dịch giả lập Overnight Trading out-of-sample (2023–2026):
 *   **Mức rút vốn lớn nhất (MDD):** **-4.85%** (so với Buy & Hold: **-28.90%**)
 *   **Số lệnh phát sinh:** 38 lệnh
 
-#### 3. Meta Platforms (META) - 650 phiên (Cập nhật sau khi nâng cấp 42 đặc trưng)
+#### 3. Meta Platforms (META) - 650 phiên (Cập nhật sau khi nâng cấp hệ 82 đặc trưng)
 *   **Tổng lợi nhuận chiến lược:** **+8.27%** (so với Buy & Hold: **+107.28%**)
 *   **Tỷ lệ Sharpe:** **+0.53**
 *   **Mức rút vốn lớn nhất (MDD):** **-4.25%** (so với Buy & Hold: **-33.14%**)
@@ -224,13 +224,28 @@ Giao dịch giả lập Overnight Trading out-of-sample (2023–2026):
     *   **Window 3 (2025-07-03 → 2026-05-14):** Chiến lược: **-2.86%** | B&H: **-12.83%** | Sharpe: **-0.70** | MDD: **-3.41%**
     *(Chiến lược bảo toàn vốn cực kỳ tốt trong giai đoạn thị trường Downtrend của Window 3: chỉ giảm -2.86% so với mức giảm -12.83% của B&H).*
 
-## 9. Quản trị rủi ro & Dải bảo vệ ATR
+## 9. Quản trị rủi ro, Dải bảo vệ ATR & Tối ưu vị thế Kelly Criterion
 
-Hệ thống cung cấp dải dự báo an toàn dựa trên độ biến động thị trường:
+Hệ thống tích hợp quy trình kiểm soát rủi ro đa lớp:
+
+### A. Dải bảo vệ ATR (Average True Range)
+Cung cấp dải dự báo an toàn động dựa trên độ biến động thực tế của thị trường:
 
 $$\text{Khoảng giá an toàn} = \text{Giá dự báo} \pm 1.5 \times \text{ATR}_{14}$$
 
-Phân loại mức độ rủi ro dựa trên độ rộng dải an toàn để hạn chế giao dịch vào những ngày thị trường biến động cực đoan.
+Nếu biên độ dao động dự kiến vượt quá dải ATR hoặc ATR ngày hôm đó tăng vọt bất thường ($\ge 3\%$), hệ thống sẽ tự động phân loại giao dịch là rủi ro cao và đưa ra khuyến nghị hạn chế giao dịch.
+
+### B. Công thức tối ưu hóa vị thế Kelly Criterion
+Để quản trị quy mô lệnh (Position Sizing), `RiskAgent` áp dụng công thức **Half-Kelly** có kiểm soát rủi ro:
+
+1. **Xác suất thắng thực tế $p$**: Tránh Overconfidence của AI bằng cách lấy giá trị nhỏ nhất giữa độ tự tin tranh luận của Orchestrator (`confidence_score`) và tỷ lệ thắng lịch sử (`win_rate_history` lấy từ Backtest):
+   $$p = \min(\text{confidence\_score}, \text{win\_rate\_history})$$
+2. **Tỷ lệ vị thế (Position Size) $f^*$**:
+   $$f^* = 0.5 \times \left( p - \frac{1 - p}{b} \right)$$
+   Trong đó:
+   * $b$: Tỷ lệ Risk-to-Reward (Reward / Risk) được tính từ khoảng cách Take Profit / Stop Loss.
+   * Hệ số $0.5$ (Half-Kelly) được sử dụng để giảm thiểu biến động tài sản lớn (Drawdown).
+   * **Hard Cap**: Tỷ lệ phân bổ vốn tối đa cho một lệnh được giới hạn cứng ở mức **25%** tổng tài sản.
 
 ---
 
@@ -239,7 +254,7 @@ Phân loại mức độ rủi ro dựa trên độ rộng dải an toàn để 
 Để nâng cấp dự báo thô của AI lên quyết định giao dịch thực tế, dự án tích hợp hệ thống đa Agent được điều phối qua **PydanticAI**:
 
 *   **TechnicalAgent:** Phân tích các đặc trưng kỹ thuật, tín hiệu dự báo thô từ Transformer và XGBoost, các ngưỡng SMA, RSI, MFI.
-*   **SentimentAgent:** Phân tích điểm số cảm xúc tin tức, tần suất tin tức, và tích hợp các tỷ lệ odds của thị trường dự đoán Polymarket (PMXT) cho các cổ phiếu Mỹ.
+*   **SentimentAgent:** Phân tích điểm số cảm xúc tin tức thu thập thời gian thực qua nguồn RSS Feed chính thống (CafeF RSS cho cổ phiếu Việt Nam, Google News RSS cho cổ phiếu Mỹ) để loại bỏ nhiễu và cào tin tức an toàn/hợp lệ, kết hợp tích hợp các tỷ lệ odds của thị trường dự đoán Polymarket (PMXT) cho các cổ phiếu Mỹ.
 *   **MacroAgent:** Đánh giá các biến số vĩ mô như Bond Yield, VIX, và Dollar Index để xác định độ an toàn của dòng tiền liên thị trường.
 *   **RiskAgent:** Tính toán mức độ rủi ro dựa trên ATR và xác định tỷ lệ phân bổ vốn (Position Sizing) tối ưu.
 *   **Orchestrator Agent:** Sử dụng PydanticAI để tổ chức tranh luận (Bull vs Bear Debate) giữa các agent, sau đó trả về quyết định giao dịch cuối cùng cấu trúc hóa dạng JSON (Action: Buy/Sell/Hold, Confidence Score, Stop Loss, Take Profit, and Reasoning).
@@ -257,7 +272,7 @@ Dữ liệu tỷ giá thô từ Yahoo Finance thường xuất hiện lỗi đ�
 
 ## 12. Kết quả đánh giá mô hình
 
-Đo lường sai số dự báo MAE và MAPE trên tập kiểm thử độc lập (đã cập nhật 42 đặc trưng):
+Đo lường sai số dự báo MAE và MAPE trên tập kiểm thử độc lập (đã cập nhật hệ 82 đặc trưng):
 
 ### Vinamilk (VNM.VN)
 *   **XGBoost:** MAE: 247.45 VND | MAPE: 0.41%
@@ -287,19 +302,25 @@ Dữ liệu tỷ giá thô từ Yahoo Finance thường xuất hiện lỗi đ�
     ```powershell
     python scripts/run_tuning.py META
     ```
-3.  **Huấn luyện mô hình:**
+3.  **Huấn luyện mô hình cuộn chiếu & sản xuất:**
+    *(Lưu ý đối với hệ điều hành Windows: Cần thiết lập biến môi trường TensorFlow để tránh lỗi)*
     ```powershell
-    python scripts/run_training.py META
+    $env:TF_ENABLE_ONEDNN_OPTS=0
+    python scripts/run_training_transformer.py META
     ```
 4.  **Chạy dự báo hàng ngày & Multi-Agent Debate Desk:**
     ```powershell
     python scripts/predict.py META
     ```
-5.  **Chạy Backtest giao dịch:**
+5.  **Dọn dẹp các tệp mô hình cũ (Giảm dung lượng ổ đĩa):**
+    ```powershell
+    python scripts/clean_old_models.py
+    ```
+6.  **Chạy Backtest giao dịch:**
     ```powershell
     python scripts/run_backtest.py META 0.0010
     ```
-6.  **Khởi chạy Giao diện Web API:**
+7.  **Khởi chạy Giao diện Web API:**
     ```powershell
     python src/web_runner/run_web.py
     ```

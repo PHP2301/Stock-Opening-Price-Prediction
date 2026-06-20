@@ -16,9 +16,17 @@ except ImportError:
     from dividend_fetcher import fetch_dividends
 # data_loader.py — ĐÃ SỬA CÁC LỖI:
 # 1. Bỏ DataTransformer() nội bộ cuối hàm fetch_and_prepare_data()
-#    → hàm giờ chỉ trả df với raw price + macro, KHÔNG tự tính 34 features
+#    → hàm giờ chỉ trả df với raw price + macro, KHÔNG tự tính 34/42 features
 #    → tránh dẫm lên DataTransformer của caller và tránh fit scaler sai
 # 2. Kalman filter chỉ chạy 1 lần — có check "if 'close_smoothed' not in"
+# 3. Regime Filter: sp500_above_ma200 (US) + vnm_etf_above_ma200 (VN)
+# 4. FIX: tránh gọi lại API trùng lặp cho ticker "VNM" (VanEck Vietnam ETF)
+#    — tái sử dụng market_return đã tải sẵn cho is_vn=True
+# 5. FIX: dropna() chỉ áp dụng trên feature_cols THỰC SỰ dùng để train
+#    (từ DataTransformer.feature_cols), tránh mất data do NaN ở cột phụ
+#    (quarter, year, close_smoothed...) không nằm trong input model
+# 6. FIX: xóa cột tạm 'quarter', 'year' trước khi trả về — tránh leak
+#    nhầm vào features nếu code khác lỡ dùng df.columns thay vì feature_cols
 
 
 def format_vn(value):
@@ -54,7 +62,48 @@ def calculate_days_before_tet(dates_series):
     return days_before
 
 
+def get_vcb_usd_rates():
+    """
+    Lấy chi tiết tỷ giá USD/VND từ Vietcombank Portal (Mua tiền mặt, Mua chuyển khoản, Bán).
+    Trả về dict hoặc None nếu lỗi.
+    """
+    try:
+        import urllib.request
+        import xml.etree.ElementTree as ET
+        url = "https://portal.vietcombank.com.vn/Usercontrols/TVPortal.TyGia/pXML.aspx?b=10"
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
+        with urllib.request.urlopen(req, timeout=5) as response:
+            xml_data = response.read()
+            root = ET.fromstring(xml_data)
+            for exrate in root.findall('Exrate'):
+                code = exrate.get('CurrencyCode')
+                if code == 'USD':
+                    buy_cash = float(exrate.get('Buy', '0').replace(',', ''))
+                    buy_transfer = float(exrate.get('Transfer', '0').replace(',', ''))
+                    sell = float(exrate.get('Sell', '0').replace(',', ''))
+                    return {
+                        'buy_cash': buy_cash,
+                        'buy_transfer': buy_transfer,
+                        'sell': sell
+                    }
+    except Exception:
+        pass
+    return None
+
+
 def get_realtime_usd_vnd_rate():
+    """
+    Lấy tỷ giá USD/VND realtime.
+    Ưu tiên 1: Tỷ giá Mua chuyển khoản của Vietcombank (sát thực tế nhất với đầu tư tài chính).
+    Ưu tiên 2: Yahoo Finance (USDVND=X).
+    Ưu tiên 3: Open ER API.
+    """
+    # 1. Thử lấy từ Vietcombank (lấy tỷ giá Mua Chuyển Khoản)
+    vcb_rates = get_vcb_usd_rates()
+    if vcb_rates and 15000.0 <= vcb_rates['buy_transfer'] <= 28000.0:
+        return vcb_rates['buy_transfer']
+
+    # 2. Fallback: Yahoo Finance
     try:
         ticker = yf.Ticker("USDVND=X")
         df = ticker.history(period="5d")
@@ -66,6 +115,8 @@ def get_realtime_usd_vnd_rate():
                 return rate
     except Exception:
         pass
+
+    # 3. Fallback: Open ER API
     try:
         import urllib.request, json
         url = "https://open.er-api.com/v6/latest/USD"
@@ -77,6 +128,7 @@ def get_realtime_usd_vnd_rate():
                 return rate
     except Exception:
         pass
+
     return 25400.0
 
 
@@ -98,13 +150,13 @@ def calculate_dividend_features(df, df_divs):
     df['dividend_flag'] = 0.0
     df['days_to_dividend'] = 60.0
     df['days_after_dividend'] = 60.0
-    
+
     if df_divs is None or df_divs.empty:
         return df
-        
+
     div_dates = pd.to_datetime(df_divs['date']).dt.normalize().tolist()
     trading_dates = pd.to_datetime(df['date']).dt.normalize().tolist()
-    
+
     div_trading_indices = []
     for div_date in div_dates:
         future_trades = [i for i, d in enumerate(trading_dates) if d >= div_date]
@@ -113,15 +165,15 @@ def calculate_dividend_features(df, df_divs):
             div_trading_indices.append(idx)
             if abs((trading_dates[idx] - div_date).days) <= 3:
                 df.loc[idx, 'dividend_flag'] = 1.0
-                
+
     if not div_trading_indices:
         return df
-        
+
     div_trading_indices = sorted(list(set(div_trading_indices)))
-    
+
     days_to = []
     days_after = []
-    
+
     n_days = len(trading_dates)
     for i in range(n_days):
         next_div_indices = [j for j in div_trading_indices if j >= i]
@@ -129,13 +181,13 @@ def calculate_dividend_features(df, df_divs):
             days_to.append(float(min(next_div_indices[0] - i, 60)))
         else:
             days_to.append(60.0)
-            
+
         prev_div_indices = [j for j in div_trading_indices if j <= i]
         if prev_div_indices:
             days_after.append(float(min(i - prev_div_indices[-1], 60)))
         else:
             days_after.append(60.0)
-            
+
     df['days_to_dividend'] = days_to
     df['days_after_dividend'] = days_after
     return df
@@ -146,13 +198,15 @@ def fetch_and_prepare_data(
     start_date: str = "2015-01-01",
     end_date: str = "2026-05-20",
     sentiment_engine: str = 'vader',
+    is_training: bool = True,
 ):
     """
     Tải và chuẩn bị dữ liệu giá + macro features.
 
     LƯU Ý QUAN TRỌNG — ĐÃ SỬA:
-    Hàm này KHÔNG còn tạo DataTransformer() nội bộ và KHÔNG tự tính 34 stationary features.
-    Caller (run_training.py, run_pipeline.py...) phải gọi:
+    Hàm này KHÔNG còn tạo DataTransformer() nội bộ và KHÔNG tự tính
+    34/42 stationary features. Caller (run_training_transformer.py, run_pipeline.py...)
+    phải gọi:
         transformer = DataTransformer()
         X_scaled, y_scaled, _ = transformer.fit_transform_train_only(df)
     Điều này tránh:
@@ -316,14 +370,19 @@ def fetch_and_prepare_data(
 
     is_vn = ".VN" in ticker.upper()
     index_ticker = "VNM" if is_vn else "^IXIC"
-    df_market = _load_yf_series(index_ticker, 'market_return', pct_change=True)
+
+    # FIX 4: Tải market_return MỘT LẦN. Với VN, ticker "VNM" (không .VN)
+    # = VanEck Vietnam ETF trên NYSE — đồng thời dùng làm benchmark
+    # market_return VÀ làm regime filter (tránh gọi API trùng lặp).
+    # Cần raw close (không pct_change) để tính MA200, nên tải riêng cột close.
+    df_market_raw = _load_yf_series(index_ticker, 'market_return', pct_change=True)
     df_vix    = _load_yf_series("^VIX",       'vix')
     df_tnx    = _load_yf_series("^TNX",       'bond_yield_10y')
     df_dxy    = _load_yf_series("DX-Y.NYB",   'dollar_index_change', pct_change=True)
     df_sp500  = _load_yf_series("^GSPC",      'sp500')
     df_nasdaq = _load_yf_series("^IXIC",      'nasdaq')
 
-    df = pd.merge(df, df_market, on='date', how='left')
+    df = pd.merge(df, df_market_raw, on='date', how='left')
     df['market_return']    = df['market_return'].fillna(0.0)
     df = pd.merge(df, df_vix, on='date', how='left')
     df['vix']              = df['vix'].ffill().bfill().fillna(20.0)
@@ -332,16 +391,34 @@ def fetch_and_prepare_data(
     df = pd.merge(df, df_dxy, on='date', how='left')
     df['dollar_index_change'] = df['dollar_index_change'].fillna(0.0)
 
-    # Thêm S&P 500 và NASDAQ cho Regime Detection
+    # Thêm S&P 500 và NASDAQ cho Regime Detection (luôn tải — dùng cho
+    # nasdaq_12m_return của cả US và VN, theo logic gốc).
     df = pd.merge(df, df_sp500, on='date', how='left')
     df['sp500'] = df['sp500'].ffill().bfill().fillna(4000.0)
     df = pd.merge(df, df_nasdaq, on='date', how='left')
     df['nasdaq'] = df['nasdaq'].ffill().bfill().fillna(15000.0)
 
-    # Tính toán chỉ báo Regime
+    # Tính toán chỉ báo Regime cho US (SP500)
     sp500_ma200 = df['sp500'].rolling(200, min_periods=1).mean()
     df['sp500_above_ma200'] = (df['sp500'] > sp500_ma200).astype(float)
     df['nasdaq_12m_return'] = (df['nasdaq'] / df['nasdaq'].shift(252) - 1).fillna(0.0)
+
+    # FIX 4: Chỉ báo Regime cho thị trường Việt Nam — TÁI SỬ DỤNG
+    # df_market_raw (ticker "VNM" = VanEck Vietnam ETF) đã tải ở trên,
+    # không gọi lại API. Cần raw close (không pct_change) cho MA200,
+    # nên tải lại CHỈ close (không pct_change) qua 1 lần gọi riêng,
+    # nhẹ hơn việc tải y_xs+pct_change hai lần.
+    if is_vn:
+        df_vnm_etf_close = _load_yf_series("VNM", 'vnm_etf', pct_change=False)
+        if not df_vnm_etf_close.empty:
+            df = pd.merge(df, df_vnm_etf_close, on='date', how='left')
+            df['vnm_etf'] = df['vnm_etf'].ffill().bfill().fillna(df['vnm_etf'].median())
+            vnm_ma200 = df['vnm_etf'].rolling(200, min_periods=1).mean()
+            df['vnm_etf_above_ma200'] = (df['vnm_etf'] > vnm_ma200).astype(float)
+        else:
+            df['vnm_etf_above_ma200'] = 1.0  # fallback: không chặn mua
+    else:
+        df['vnm_etf_above_ma200'] = 1.0
 
     # USD/VND change
     if df_usd_vnd is not None:
@@ -352,7 +429,8 @@ def fetch_and_prepare_data(
         df['usdvnd_change'] = 0.0
     df['usdvnd_change'] = df['usdvnd_change'].fillna(0.0)
 
-    # Đồng bộ múi giờ
+    # Đồng bộ múi giờ — US macro shift(1) cho VN tickers (NYSE đóng cửa
+    # sau HOSE), không shift cho US tickers (cùng phiên giao dịch).
     if is_vn:
         df['vix_lag1']            = df['vix'].shift(1)
         df['bond_yield_lag1']     = df['bond_yield_10y'].shift(1)
@@ -365,6 +443,8 @@ def fetch_and_prepare_data(
         df['bond_yield_lag1']     = df['bond_yield_10y']
         df['usdvnd_change']       = df['dollar_index_change']
         df['vnindex_return_lag1'] = df['market_return']
+        # sp500_above_ma200 / nasdaq_12m_return: KHÔNG shift cho US —
+        # SP500 close cùng ngày T hợp lệ cho US tickers (cùng timezone).
 
     df['vix_lag1']        = df['vix_lag1'].ffill().bfill().fillna(20.0)
     df['bond_yield_lag1'] = df['bond_yield_lag1'].ffill().bfill().fillna(4.0)
@@ -377,6 +457,9 @@ def fetch_and_prepare_data(
     df['month_sin']       = np.sin(2 * np.pi * df['date'].dt.month / 12)
     df['month_cos']       = np.cos(2 * np.pi * df['date'].dt.month / 12)
 
+    # FIX 6: 'quarter' và 'year' chỉ dùng tạm để tính is_quarter_end,
+    # sẽ bị xóa ở cuối hàm trước khi trả về (tránh leak vào features
+    # nếu code khác lỡ dùng df.columns thay vì feature_cols cố định).
     df['quarter'] = (df['date'].dt.month - 1) // 3 + 1
     df['year']    = df['date'].dt.year
     df['is_quarter_end'] = 0
@@ -388,7 +471,7 @@ def fetch_and_prepare_data(
 
     df['days_before_tet'] = calculate_days_before_tet(df['date']) if is_vn else 30.0
 
-    # === SỬA: Kalman filter với guard — chỉ tính 1 lần ===
+    # === Kalman filter với guard — chỉ tính 1 lần ===
     # Tránh double-smooth nếu df đã có close_smoothed (ví dụ load từ cache)
     if 'close_smoothed' not in df.columns:
         try:
@@ -433,15 +516,42 @@ def fetch_and_prepare_data(
         df[f'target_return_{h}d'] = (df['close'].shift(-h) - df['close']) / df['close']
         df[f'target_spread_{h}d'] = (df['high'].shift(-h) - df['low'].shift(-h)) / df['close']
 
-    # === SỬA: KHÔNG còn tạo DataTransformer() nội bộ ở đây ===
+    # === KHÔNG còn tạo DataTransformer() để transform_df() ở đây ===
     # Trước: transformer = DataTransformer(); df_feats = transformer.transform_df(df)
     # → gây double-transform và scaler leak
     # Sau: caller tự gọi transformer.fit_transform_train_only(df)
+    #
+    # NHƯNG: vẫn cần biết DANH SÁCH feature_cols thực sự (42 cột) để
+    # dropna() đúng phạm vi — import DataTransformer CHỈ để đọc
+    # .feature_cols (không gọi transform_df/fit ở đây, không leak).
+    try:
+        from src.features import DataTransformer
+    except ImportError:
+        from features import DataTransformer
 
-    # Drop rows where features are NaN (excluding target columns)
-    target_cols = [c for c in df.columns if 'target_' in c]
-    feature_cols = [c for c in df.columns if c not in target_cols]
-    df_cleaned = df.dropna(subset=feature_cols).reset_index(drop=True)
+    _temp_dt = DataTransformer()
+    target_cols = [c for c in df.columns if c.startswith('target_')]
+
+    # FIX 5: dropna() chỉ trên các cột THỰC SỰ dùng làm input model
+    # (42 feature_cols) + target_cols. Các cột phụ trợ tạm thời
+    # (close_smoothed, sentiment_score nếu chưa có trong feature_cols,
+    # vnm_etf, sp500, nasdaq...) KHÔNG bắt buộc phải non-NaN, vì chúng
+    # chỉ là nguyên liệu trung gian để tính feature_cols qua transform_df(),
+    # không phải input trực tiếp.
+    required_cols = [c for c in _temp_dt.feature_cols if c in df.columns]
+    # Nếu một feature_col chưa tồn tại trực tiếp trong df ở giai đoạn này
+    # (vì nó được TÍNH trong transform_df(), ví dụ 'rsi_14', 'mfi_14'),
+    # ta KHÔNG thể dropna trên nó ở đây — chỉ dropna trên các cột macro/
+    # passthrough đã thực sự có mặt trong df tại bước này.
+    if is_training:
+        dropna_cols = list(dict.fromkeys(required_cols + target_cols))
+    else:
+        dropna_cols = required_cols
+
+    # FIX 6: xóa cột tạm 'quarter', 'year' trước khi trả về
+    df = df.drop(columns=['quarter', 'year'], errors='ignore')
+
+    df_cleaned = df.dropna(subset=dropna_cols).reset_index(drop=True)
 
     os.makedirs(data_dir, exist_ok=True)
     cache_path = os.path.join(data_dir, f"{ticker}_processed.csv")
@@ -458,7 +568,7 @@ if __name__ == "__main__":
     # Cấu hình UTF-8 cho console
     if hasattr(sys.stdout, 'reconfigure'):
         sys.stdout.reconfigure(encoding='utf-8')
-        
+
     print("=== CHẠY TẢI DỮ LIỆU GIAO DỊCH & VĨ MÔ ===")
     tickers = ["VNM.VN", "GOOGL", "META"]
     for ticker in tickers:

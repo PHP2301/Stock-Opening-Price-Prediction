@@ -28,7 +28,7 @@ def kalman_filter(series: pd.Series, R: float = 0.01, Q: float = 1e-5) -> pd.Ser
 
 
 class DataTransformer:
-    def __init__(self, time_steps: int = 45, num_features: int = 22):
+    def __init__(self, time_steps: int = 45, num_features: int = 42):
         self.time_steps = time_steps
         self.feature_scaler = StandardScaler()
         self.target_scaler  = StandardScaler()

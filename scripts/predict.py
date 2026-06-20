@@ -39,10 +39,29 @@ def run_prediction_for_ticker(ticker):
     scaler_x_path = os.path.join(models_dir, f"feature_scaler_{ticker}.pkl")
     scaler_y_path = os.path.join(models_dir, f"target_scaler_{ticker}.pkl")
     
+    # Fallback tìm model và scaler có timestamp gần nhất nếu file gốc không tồn tại
+    import glob
+    if not os.path.exists(trans_path):
+        ts_models = glob.glob(os.path.join(models_dir, f"transformer_model_{ticker}_*.keras"))
+        if ts_models:
+            ts_models.sort(key=os.path.getmtime, reverse=True)
+            trans_path = ts_models[0]
+            print(f"ℹ️ Sử dụng model Transformer timestamp mới nhất: {os.path.basename(trans_path)}")
+            
+    if not os.path.exists(xgb_path):
+        ts_xgbs = glob.glob(os.path.join(models_dir, f"xgboost_model_{ticker}_*.pkl"))
+        if ts_xgbs:
+            ts_xgbs.sort(key=os.path.getmtime, reverse=True)
+            # Tránh lấy nhầm files scaler
+            ts_xgbs = [f for f in ts_xgbs if "feature_scaler" not in f and "target_scaler" not in f]
+            if ts_xgbs:
+                xgb_path = ts_xgbs[0]
+                print(f"ℹ️ Sử dụng model XGBoost timestamp mới nhất: {os.path.basename(xgb_path)}")
+
     # Kiểm tra sự tồn tại của mô hình
     if not (os.path.exists(trans_path) and os.path.exists(xgb_path) and os.path.exists(scaler_x_path) and os.path.exists(scaler_y_path)):
-        print(f"❌ LỖI: Không tìm thấy đầy đủ mô hình đã huấn luyện (Transformer + XGBoost) cho mã {ticker}!")
-        print(f"Vui lòng chạy lệnh huấn luyện trước: python scripts/run_training.py {ticker}")
+        print(f"❌ LỖI: Không tìm thấy đầy đủ mô hình đã huấn luyện (Transformer + XGBoost + Scalers) cho mã {ticker}!")
+        print(f"Vui lòng chạy lệnh huấn luyện trước: python scripts/run_training_transformer.py {ticker}")
         return
         
     print("⏳ Đang nạp mô hình và bộ chuẩn hóa...")
@@ -74,7 +93,7 @@ def run_prediction_for_ticker(ticker):
         start_date = (datetime.datetime.now() - datetime.timedelta(days=500)).strftime("%Y-%m-%d")
         end_date = (datetime.datetime.now() + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
         
-        df = fetch_and_prepare_data(ticker, start_date=start_date, end_date=end_date, sentiment_engine="vader")
+        df = fetch_and_prepare_data(ticker, start_date=start_date, end_date=end_date, sentiment_engine="vader", is_training=False)
         if df.empty:
             print(f"❌ Lỗi: Không thể tải dữ liệu giao dịch cho {ticker} từ Yahoo Finance / DNSE.")
             return
@@ -111,9 +130,16 @@ def run_prediction_for_ticker(ticker):
             trans_pred_clean = trans_pred_clean.reshape(1, -1)
         trans_return_transformer = scaler_y.inverse_transform(trans_pred_clean)[0]
 
-        # Chạy dự báo từ XGBoost Stacking
+        # Trích xuất đặc trưng latent (40 chiều) từ Transformer backbone
+        feature_extractor = tf.keras.models.Model(
+            inputs=transformer_model.input,
+            outputs=transformer_model.get_layer("latent_embedding").output
+        )
+        X_predict_latent = feature_extractor.predict(X_predict, verbose=0)
+
+        # Chạy dự báo từ XGBoost Stacking (40 latent + 42 raw = 82)
         X_pred_today = X_predict[0, -1, :].reshape(1, -1)
-        X_pred_xgb = np.concatenate([trans_pred_clean, X_pred_today], axis=1)
+        X_pred_xgb = np.concatenate([X_predict_latent, X_pred_today], axis=1)
         xgb_pred_scaled = xgb_model.predict(X_pred_xgb)
         trans_return_xgb = scaler_y.inverse_transform(xgb_pred_scaled)[0]
         
@@ -145,15 +171,16 @@ def run_prediction_for_ticker(ticker):
         trans_lowers = trans_vals - 1.5 * last_atr
         trans_uppers = trans_vals + 1.5 * last_atr
 
-        # Trích xuất các biến kỹ thuật & vĩ mô phục vụ các Agent
-        rsi_14 = float(df_transformed['rsi_14'].iloc[-1])
-        macd_ratio = float(df_transformed['macd_ratio'].iloc[-1])
-        bb_position = float(df_transformed['bb_position'].iloc[-1])
-        mfi_14 = float(df_transformed['mfi_14'].iloc[-1])
-        vix_lag1 = float(df_transformed['vix_lag1'].iloc[-1])
-        bond_yield_lag1 = float(df_transformed['bond_yield_lag1'].iloc[-1])
-        usdvnd_change = float(df_transformed['usdvnd_change'].iloc[-1])
-        vnindex_return_lag1 = float(df_transformed['vnindex_return_lag1'].iloc[-1])
+        # Trích xuất các biến kỹ thuật & vĩ mô phục vụ các Agent (lấy trực tiếp từ df cho các cột vĩ mô để an toàn)
+        rsi_14 = float(df_transformed['rsi_14'].iloc[-1]) if 'rsi_14' in df_transformed.columns else 50.0
+        macd_ratio = float(df_transformed['macd_ratio'].iloc[-1]) if 'macd_ratio' in df_transformed.columns else 0.0
+        bb_position = float(df_transformed['bb_position'].iloc[-1]) if 'bb_position' in df_transformed.columns else 0.5
+        mfi_14 = float(df_transformed['mfi_14'].iloc[-1]) if 'mfi_14' in df_transformed.columns else 50.0
+        
+        vix_lag1 = float(df['vix_lag1'].iloc[-1]) if 'vix_lag1' in df.columns else 20.0
+        bond_yield_lag1 = float(df['bond_yield_lag1'].iloc[-1]) if 'bond_yield_lag1' in df.columns else 4.0
+        usdvnd_change = float(df['usdvnd_change'].iloc[-1]) if 'usdvnd_change' in df.columns else 0.0
+        vnindex_return_lag1 = float(df['vnindex_return_lag1'].iloc[-1]) if 'vnindex_return_lag1' in df.columns else 0.0
         news_sentiment_score = float(df['sentiment_score'].iloc[-1]) if 'sentiment_score' in df.columns else 0.0
 
         # Import và thực thi các Agent
@@ -227,7 +254,7 @@ def run_prediction_for_ticker(ticker):
         perf_path = os.path.join(ROOT_DIR, 'config', f'performance_metrics_{ticker}.json')
         if os.path.exists(perf_path):
             try:
-                with open(perf_path, 'r', encoding='utf-8') as f:
+                with open(perf_path, 'r', encoding='utf-8-sig') as f:
                     perf_data = json.load(f)
                 win_rate_history = perf_data.get('overall_win_rate', perf_data.get('win_rate', 0.50))
                 current_drawdown = perf_data.get('current_drawdown', 0.0)

@@ -271,7 +271,7 @@ def main():
 
     print(f"\n✅ Tuning hoàn tất. Chạy training với params mới:")
     for ticker in results:
-        print(f"   python scripts/run_training.py {ticker}")
+        print(f"   python scripts/run_training_transformer.py {ticker}")
 
 
 if __name__ == "__main__":

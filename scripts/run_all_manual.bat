@@ -18,7 +18,7 @@ if exist .venv\Scripts\activate.bat (
 )
 
 echo [*] Đang bắt đầu chạy pipeline huấn luyện chéo và dự báo mới...
-python scripts/run_training.py
+python scripts/run_training_transformer.py
 
 echo.
 echo =====================================================================
