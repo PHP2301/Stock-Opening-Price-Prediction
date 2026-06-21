@@ -78,6 +78,7 @@ def run_simulation(
     final_returns,
     ticker, commission_pct, slippage_pct,
     threshold_buy=0.0010, threshold_sell=-0.0010,
+    resume_threshold=0.10, cooldown_period=20,
 ):
     """
     Chạy mô phỏng giao dịch trên dữ liệu test.
@@ -89,6 +90,17 @@ def run_simulation(
     df_test:          DataFrame test, length N (dùng cho close/volume/dates/regime).
     df_test_extended: DataFrame test có thêm 1 dòng buffer ở đầu (length N+1),
                        dùng để lấy open[0] làm base cho Buy & Hold.
+
+    resume_threshold: % phục hồi của Buy & Hold (đo từ đáy kể từ lúc dừng lỗ)
+                       cần đạt để tự động mở lại giao dịch (mặc định 10%).
+                       Đo trên B&H thay vì trên equity chiến lược vì sau khi
+                       dừng lỗ chiến lược chỉ còn cash, không phản ánh được
+                       sự phục hồi của thị trường.
+    cooldown_period:   Số phiên tối thiểu phải chờ kể từ lúc dừng lỗ trước khi
+                        được phép mở lại giao dịch, kể cả khi đã đạt
+                        resume_threshold sớm hơn. Tránh vòng lặp "cắt lỗ - hồi
+                        giả 10% - vào lại - cắt lỗ tiếp" trong downtrend kéo
+                        dài có nhiều bull trap (mặc định 20 phiên ≈ 1 tháng).
     """
     final_returns = np.asarray(final_returns)
 
@@ -141,6 +153,14 @@ def run_simulation(
     peak_price = 0.0
     max_equity_peak = initial_capital
     portfolio_stop_loss_triggered = False
+
+    # Trạng thái cho cơ chế Resume sau Stop-Loss:
+    # - bh_trough: đáy thấp nhất của B&H kể từ lần dừng lỗ GẦN NHẤT (reset
+    #   mỗi lần trigger mới, không kế thừa từ lần trigger trước đó).
+    # - stop_loss_trigger_index: chỉ số phiên (i) tại thời điểm trigger,
+    #   dùng để tính cooldown_period (số phiên tối thiểu phải chờ).
+    bh_trough = None
+    stop_loss_trigger_index = None
 
     # Regime filter column theo ticker
     regime_col = 'vnm_etf_above_ma200' if "VNM" in ticker.upper() else 'sp500_above_ma200'
@@ -229,6 +249,11 @@ def run_simulation(
         drawdown = (cur_equity - max_equity_peak) / max_equity_peak
         if drawdown <= -0.20 and not portfolio_stop_loss_triggered:
             portfolio_stop_loss_triggered = True
+            stop_loss_trigger_index = i
+            # Reset đáy B&H NGAY tại thời điểm trigger — không kế thừa đáy
+            # từ lần trigger trước đó (nếu có), tránh dùng nhầm đáy cũ
+            # (ví dụ đáy COVID 2020) làm tham chiếu cho lần dừng lỗ hiện tại.
+            bh_trough = bh_equity[-1]
             currency_label = "VNĐ" if "VNM" in ticker.upper() else "USD"
             print(f"      🚨 [PORTFOLIO STOP-LOSS] Drawdown {drawdown*100:.2f}% "
                   f"vào {date_str(dates[i])} (Đỉnh: {max_equity_peak:,.2f} {currency_label}, "
@@ -244,6 +269,33 @@ def run_simulation(
                     note="PORTFOLIO_STOP_LOSS",
                 ))
                 cur_equity = cash
+
+        # Resume sau Stop-Loss: chỉ xét khi đang bị khóa giao dịch.
+        # Điều kiện mở lại (cả 2 đều phải thỏa):
+        #   1. Đã qua cooldown_period phiên kể từ lúc trigger (tránh bull trap
+        #      ngắn hạn ngay sau khi vừa cắt lỗ).
+        #   2. B&H đã phục hồi >= resume_threshold từ đáy kể từ lúc trigger
+        #      (đo trên B&H, không đo trên equity chiến lược, vì equity
+        #      chiến lược lúc này chỉ là cash không đổi nên không phản ánh
+        #      được sự phục hồi thực tế của thị trường).
+        if portfolio_stop_loss_triggered:
+            bh_trough = min(bh_trough, bh_equity[-1])
+            recovery_from_trough = (bh_equity[-1] - bh_trough) / bh_trough
+            sessions_since_trigger = i - stop_loss_trigger_index
+
+            if (sessions_since_trigger >= cooldown_period
+                    and recovery_from_trough >= resume_threshold):
+                portfolio_stop_loss_triggered = False
+                # Đặt lại đỉnh tài sản = vốn tiền mặt hiện tại, tránh việc
+                # so sánh với đỉnh lịch sử cũ (trước khi sụp đổ) khiến hệ
+                # thống bị kích hoạt dừng lỗ lại ngay lập tức.
+                max_equity_peak = cur_equity
+                bh_trough = None
+                stop_loss_trigger_index = None
+                print(f"      ✅ [RESUME] B&H phục hồi {recovery_from_trough*100:.1f}% "
+                      f"từ đáy sau {sessions_since_trigger} phiên (cooldown "
+                      f"{cooldown_period} phiên) — mở lại giao dịch tại "
+                      f"{date_str(dates[i])}.")
 
         equity.append(cur_equity)
         bh_equity.append(bh_shares * close_vals_full[i])
