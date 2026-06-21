@@ -329,7 +329,7 @@ def run_prediction_for_ticker(ticker):
         try:
             from src.notifications import send_telegram_message
             
-            usd_desc = f" (${last_close/USD_TO_VND:,.2f} USD)" if "VNM" not in ticker.upper() else ""
+            usd_desc = f" (${last_close:,.2f} USD)" if "VNM" not in ticker.upper() else ""
             
             def trend_str(val):
                 pct = (val - last_close) / last_close * 100

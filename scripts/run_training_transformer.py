@@ -44,6 +44,10 @@ from src.ai_models import (
     build_xgboost_optimized, build_transformer,
     PositionalEmbedding, TimeDecayAttention, MultiTaskModel, UncertaintyWeightsLayer,
 )
+from src.backtest_engine import (
+    get_return_output, compute_metrics, compute_trade_metrics,
+    run_simulation, run_walk_forward_evaluation
+)
 
 USD_TO_VND = get_realtime_usd_vnd_rate()
 print(f"💵 Tỷ giá USD/VND: {format_vn(USD_TO_VND)} VNĐ\n")
@@ -58,9 +62,6 @@ SENTIMENT_ENGINE = 'finbert'   # hoặc 'vader' — phải giống thiết lập
 # Đặt False khi đã có mô hình được huấn luyện từ trước và muốn giữ Transformer tốt nhất
 RETRAIN_TRANSFORMER = os.environ.get("FORCE_RETRAIN", "1") == "1"
 
-
-def get_return_output(pred):
-    return pred[0] if isinstance(pred, (list, tuple)) else pred
 
 
 def cosine_decay(epoch):
@@ -82,212 +83,7 @@ def evaluate_predictions(y_true, y_pred, model_name, ticker, rate=None):
     return rmse, mae, mape
 
 
-def compute_metrics(equity, bh_equity, dates):
-    equity    = np.array(equity)
-    bh_equity = np.array(bh_equity)
-    total_strat_ret = (equity[-1]    - equity[0])    / equity[0]    * 100
-    total_bh_ret    = (bh_equity[-1] - bh_equity[0]) / bh_equity[0] * 100
-
-    strat_daily_ret = np.diff(equity) / equity[:-1]
-    sharpe = (
-        np.sqrt(252) * np.mean(strat_daily_ret) / np.std(strat_daily_ret)
-        if len(strat_daily_ret) > 1 and np.std(strat_daily_ret) > 1e-8
-        else 0.0
-    )
-    peaks    = np.maximum.accumulate(equity)
-    mdd      = np.min((equity - peaks) / peaks) * 100
-    bh_peaks = np.maximum.accumulate(bh_equity)
-    bh_mdd   = np.min((bh_equity - bh_peaks) / bh_peaks) * 100
-
-    calmar = (
-        (total_strat_ret / abs(mdd))
-        if abs(mdd) > 1e-8
-        else 0.0
-    )
-
-    return dict(
-        strat_return=total_strat_ret,
-        bh_return=total_bh_ret,
-        sharpe=sharpe, mdd=mdd, bh_mdd=bh_mdd,
-        calmar=calmar,
-    )
-
-
-def compute_trade_metrics(trades, commission_pct):
-    buy_trades  = [t for t in trades if t["type"] == "BUY"]
-    sell_trades = [t for t in trades if t["type"] == "SELL"]
-    total = min(len(buy_trades), len(sell_trades))
-    if total == 0:
-        return 0.0, 0, 1.0
-
-    win = 0
-    total_profits = 0.0
-    total_losses = 0.0
-    for b, s in zip(buy_trades[:total], sell_trades[:total]):
-        buy_cost = b['price'] * b['shares'] * (1 + commission_pct)
-        pnl = s['cash'] - buy_cost
-        if pnl > 0:
-            win += 1
-            total_profits += pnl
-        else:
-            total_losses += abs(pnl)
-
-    profit_factor = (
-        total_profits / total_losses
-        if total_losses > 1e-8
-        else (999.0 if total_profits > 0 else 1.0)
-    )
-    win_rate = win / total * 100
-    return win_rate, total, profit_factor
-
-
-def run_simulation(
-    df_test, df_test_extended,
-    trans_returns,
-    ticker, commission_pct, slippage_pct,
-    threshold_buy=0.0010, threshold_sell=-0.0010,
-):
-    vol_series = df_test['volume'].values
-    vol_mean   = pd.Series(vol_series).rolling(20, min_periods=1).mean().values
-    vol_std    = pd.Series(vol_series).rolling(20, min_periods=1).std().fillna(1.0).values
-    vol_zscore = (vol_series - vol_mean) / (vol_std + 1e-9)
-
-    hist_returns = df_test['close'].pct_change().fillna(0.0).values
-    rolling_std  = pd.Series(hist_returns).rolling(20, min_periods=1).std().fillna(0.02).values
-
-    initial_capital = 100_000_000.0
-    cash     = initial_capital
-    shares   = 0.0
-    position = 0
-    equity    = [initial_capital]
-    bh_shares = initial_capital / df_test_extended['open'].values[0]
-    bh_equity = [initial_capital]
-    trades    = []
-
-    date_str = lambda d: d.strftime('%Y-%m-%d') if hasattr(d, 'strftime') else str(d)
-    dates = df_test['date'].values
-
-    buy_index = -1
-    HOLD_DAYS = 3
-    peak_price = 0.0
-
-    max_equity_peak = initial_capital
-    portfolio_stop_loss_triggered = False
-
-    for i in range(len(df_test) - 1):
-        r_1, r_2, r_3 = trans_returns[i, 0], trans_returns[i, 1], trans_returns[i, 2]
-
-        sigma = rolling_std[i]
-
-        is_momentum = (r_3 > r_2) and (r_2 > r_1) and (r_1 > threshold_buy)
-        is_mean_rev  = (r_1 < -1.5 * sigma)
-        is_buy = is_momentum or is_mean_rev
-
-        if "VNM" in ticker.upper():
-            regime_col = 'vnm_etf_above_ma200'
-        else:
-            regime_col = 'sp500_above_ma200'
-        if regime_col in df_test.columns and df_test[regime_col].values[i] == 0:
-            is_buy = False
-
-        if portfolio_stop_loss_triggered:
-            is_buy = False
-
-        cur_slip   = slippage_pct * 2.0 if vol_zscore[i] < -1.0 else slippage_pct
-        buy_price  = df_test_extended['open'].values[i] * (1 + cur_slip)
-        sell_price = df_test_extended['close'].values[i] * (1 - cur_slip)
-
-        just_sold = False
-        if position == 1 and (i - buy_index == HOLD_DAYS):
-            cash     = shares * sell_price * (1 - commission_pct)
-            shares   = 0.0
-            position = 0
-            buy_index = -1
-            just_sold = True
-            trades.append(dict(
-                date=date_str(dates[i]), type="SELL",
-                price=sell_price, cash=cash,
-            ))
-
-        if position == 1 and not just_sold:
-            current_close = df_test_extended['close'].values[i]
-            peak_price = max(peak_price, current_close)
-            if ticker == "META" and current_close < peak_price * 0.96:
-                cash     = shares * sell_price * (1 - commission_pct)
-                shares   = 0.0
-                position = 0
-                buy_index = -1
-                just_sold = True
-                trades.append(dict(
-                    date=date_str(dates[i]), type="SELL",
-                    price=sell_price, cash=cash,
-                    note="TRAILING_STOP"
-                ))
-
-        if position == 0 and is_buy and not just_sold:
-            if "VNM" in ticker.upper() and vol_zscore[i] < -0.5:
-                is_buy = False
-
-            if is_buy:
-                shares   = cash * (1 - commission_pct) / buy_price
-                cash     = 0.0
-                position = 1
-                buy_index = i
-                peak_price = df_test_extended['close'].values[i]
-                trades.append(dict(
-                    date=date_str(dates[i]), type="BUY",
-                    price=buy_price, shares=shares,
-                ))
-
-        cur_equity = (
-            cash if position == 0
-            else shares * df_test_extended['close'].values[i] * (1 - cur_slip) * (1 - commission_pct)
-        )
-        
-        if cur_equity > max_equity_peak:
-            max_equity_peak = cur_equity
-            
-        drawdown = (cur_equity - max_equity_peak) / max_equity_peak
-        if drawdown <= -0.20 and not portfolio_stop_loss_triggered:
-            portfolio_stop_loss_triggered = True
-            print(f"      🚨 [PORTFOLIO STOP-LOSS] Drawdown chạm {drawdown*100:.2f}% vào ngày {date_str(dates[i])} (Đỉnh: {max_equity_peak:,.2f} VNĐ, Hiện tại: {cur_equity:,.2f} VNĐ). Kích hoạt dừng lỗ toàn bộ danh mục và ngưng giao dịch.")
-            if position == 1:
-                cash     = shares * sell_price * (1 - commission_pct)
-                shares   = 0.0
-                position = 0
-                buy_index = -1
-                trades.append(dict(
-                    date=date_str(dates[i]), type="SELL",
-                    price=sell_price, cash=cash,
-                    note="PORTFOLIO_STOP_LOSS"
-                ))
-                cur_equity = cash
-
-        equity.append(cur_equity)
-        bh_equity.append(bh_shares * df_test_extended['close'].values[i])
-
-    if position == 1:
-        final_price = df_test_extended['close'].values[-1] * (1 - slippage_pct)
-        cash = shares * final_price * (1 - commission_pct)
-        trades.append(dict(
-            date=date_str(dates[-1]), type="SELL",
-            price=final_price, cash=cash,
-        ))
-    return dates, equity, bh_equity, trades
-
-
-def run_walk_forward_evaluation(dates, equity, bh_equity):
-    n = len(dates)
-    w = n // 3
-    results = []
-    for i in range(3):
-        s = i * w
-        e = n if i == 2 else (i + 1) * w
-        m  = compute_metrics(equity[s:e], bh_equity[s:e], dates[s:e])
-        d0 = pd.to_datetime(dates[s]).strftime('%Y-%m-%d')
-        d1 = pd.to_datetime(dates[e - 1]).strftime('%Y-%m-%d')
-        results.append({"window": f"Window {i+1} ({d0} → {d1})", **m})
-    return results
+# Các hàm backtest dùng chung đã được chuyển sang src.backtest_engine
 
 
 def main():
