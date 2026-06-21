@@ -310,7 +310,8 @@ def main():
             plt.plot(dates, bh_equity, label="Buy & Hold", color='grey', linestyle='--', alpha=0.8)
             plt.title(f"Rolling Walk-Forward Equity Curve — {ticker}", fontsize=13, fontweight='bold')
             plt.xlabel("Ngày")
-            plt.ylabel("Tài sản (VNĐ)")
+            currency = "USD" if not ("VNM" in ticker.upper()) else "VNĐ"
+            plt.ylabel(f"Tài sản ({currency})")
             plt.legend()
             plt.grid(True, alpha=0.25)
             plot_path = os.path.join(results_dir, f'walk_forward_equity_curve_{ticker}.png')
