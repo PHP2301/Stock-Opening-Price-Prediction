@@ -1,0 +1,96 @@
+﻿python : WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+At line:5 char:1
++ python scripts/run_walk_forward_backtest.py META > log_meta.txt 2>&1
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (WARNING: All lo...itten to STDERR:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+I0000 00:00:1782069184.380216   92760 port.cc:153] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors 
+from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+I0000 00:00:1782069186.325933   92760 port.cc:153] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors 
+from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+
+[*********************100%***********************]  1 of 1 completed
+
+================================================================================
+≡ƒöä Bß║«T ─Éß║ªU ROLLING WALK-FORWARD BACKTEST (HYBRID): META
+================================================================================
+─Éang tß║úi tß╗╖ gi├í USD/VND (USDVND=X) tß╗½ 2012-01-01 ─æß║┐n 2026-05-20...
+─Éang tß║úi Yahoo Finance: META...
+  Yahoo Finance: 3520 phi├¬n
+─Éang nß║íp dß╗» liß╗çu tr╞░ß╗¥ng: C:\Users\ACER\Documents\Stock-Opening-Price-Prediction\data\raw\META_prices.csv
+  Tß╗òng: 3520 phi├¬n (2012-05-18 ΓåÆ 2026-05-19)
+T├¡nh macro features...
+I0000 00:00:1782069239.967475   92760 cpu_feature_guard.cc:227] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: SSE3 SSE4.1 SSE4.2 AVX AVX2 AVX_VNNI FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+WARNING:tensorflow:From C:\Users\ACER\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\keras\src\back
+end\tensorflow\core.py:232: The name tf.placeholder is deprecated. Please use tf.compat.v1.placeholder instead.
+
+WARNING:tensorflow:TensorFlow GPU support is not available on native Windows for TensorFlow >= 2.11. Even if CUDA/cuDNN are installed, GPU will not be used. Please use WSL2 or 
+the TensorFlow-DirectML plugin.
+  [NEWS] Tß║úi v├á ph├ón t├¡ch cß║úm x├║c tin tß╗⌐c cho META...
+  [BREAKING] Injected breaking news for META: Global platform outage!
+≡ƒôÑ ─Éang tß║úi dß╗» liß╗çu cß╗ò tß╗⌐c cho META tß╗½ yfinance...
+   => ─É├ú tß║úi 9 ─æß╗út chia cß╗ò tß╗⌐c cho META
+─É├ú l╞░u cache: C:\Users\ACER\Documents\Stock-Opening-Price-Prediction\data\META_processed.csv
+Sß║╡n s├áng vß╗¢i 3517 phi├¬n.
+
+≡ƒÑç ─Éß╗ìc cß║Ñu h├¼nh tß╗æi ╞░u: d_model=64, heads=2, key_dim=16, batch_size=64
+
+Γû╢∩╕Å [WINDOW 2023] ΓÇö Huß║Ñn luyß╗çn: 2012 ΓåÆ 2022 (2673 phi├¬n) | Kiß╗âm thß╗¡: 2023 (250 phi├¬n)...
+      ≡ƒî│ [XGBOOST] Huß║Ñn luyß╗çn XGBoost mß╗¢i tr├¬n latent embedding fold 2023...
+ΓÅ│ ─Éang qu├⌐t nhanh bß╗Ö tham sß╗æ tß╗æi ╞░u cho XGBoost...
+≡ƒöÑ Tham sß╗æ tß╗æi ╞░u: {'subsample': 0.9, 'n_estimators': 150, 'max_depth': 4, 'learning_rate': 0.03, 'colsample_bytree': 1.0}
+      Γ£à Ho├án th├ánh dß╗▒ b├ío Hybrid out-of-sample 2023!
+
+Γû╢∩╕Å [WINDOW 2024] ΓÇö Huß║Ñn luyß╗çn: 2012 ΓåÆ 2023 (2923 phi├¬n) | Kiß╗âm thß╗¡: 2024 (252 phi├¬n)...
+      [WARM-START] Khß╗ƒi tß║ío trß╗ìng sß╗æ tß╗½ Window tr╞░ß╗¢c...
+      ≡ƒî│ [XGBOOST] Huß║Ñn luyß╗çn XGBoost mß╗¢i tr├¬n latent embedding fold 2024...
+ΓÅ│ ─Éang qu├⌐t nhanh bß╗Ö tham sß╗æ tß╗æi ╞░u cho XGBoost...
+≡ƒöÑ Tham sß╗æ tß╗æi ╞░u: {'subsample': 0.9, 'n_estimators': 150, 'max_depth': 4, 'learning_rate': 0.03, 'colsample_bytree': 1.0}
+      Γ£à Ho├án th├ánh dß╗▒ b├ío Hybrid out-of-sample 2024!
+
+Γû╢∩╕Å [WINDOW 2025] ΓÇö Huß║Ñn luyß╗çn: 2012 ΓåÆ 2024 (3175 phi├¬n) | Kiß╗âm thß╗¡: 2025 (250 phi├¬n)...
+      [WARM-START] Khß╗ƒi tß║ío trß╗ìng sß╗æ tß╗½ Window tr╞░ß╗¢c...
+      ≡ƒî│ [XGBOOST] Huß║Ñn luyß╗çn XGBoost mß╗¢i tr├¬n latent embedding fold 2025...
+ΓÅ│ ─Éang qu├⌐t nhanh bß╗Ö tham sß╗æ tß╗æi ╞░u cho XGBoost...
+≡ƒöÑ Tham sß╗æ tß╗æi ╞░u: {'subsample': 0.9, 'n_estimators': 150, 'max_depth': 4, 'learning_rate': 0.03, 'colsample_bytree': 1.0}
+      Γ£à Ho├án th├ánh dß╗▒ b├ío Hybrid out-of-sample 2025!
+
+Γû╢∩╕Å [WINDOW 2026] ΓÇö Huß║Ñn luyß╗çn: 2012 ΓåÆ 2025 (3425 phi├¬n) | Kiß╗âm thß╗¡: 2026 (92 phi├¬n)...
+      [WARM-START] Khß╗ƒi tß║ío trß╗ìng sß╗æ tß╗½ Window tr╞░ß╗¢c...
+      ≡ƒî│ [XGBOOST] Huß║Ñn luyß╗çn XGBoost mß╗¢i tr├¬n latent embedding fold 2026...
+ΓÅ│ ─Éang qu├⌐t nhanh bß╗Ö tham sß╗æ tß╗æi ╞░u cho XGBoost...
+≡ƒöÑ Tham sß╗æ tß╗æi ╞░u: {'subsample': 0.8, 'n_estimators': 200, 'max_depth': 3, 'learning_rate': 0.03, 'colsample_bytree': 0.8}
+      Γ£à Ho├án th├ánh dß╗▒ b├ío Hybrid out-of-sample 2026!
+
+≡ƒôè [SIMULATION] Chß║íy giß║ú lß║¡p Hybrid tr├¬n dß╗» liß╗çu 2023 ΓåÆ 2026 (844 phi├¬n)...
+   ≡ƒ¢í∩╕Å Volatility Filter: threshold=1.2
+   [DEBUG] Corr Final-Actual (T+1)=+0.0241 | Final mean=0.00329 | Actual mean=0.00219
+      ≡ƒÜ¿ [PORTFOLIO STOP-LOSS] Drawdown -22.34% v├áo 2025-03-10T00:00:00.000000000 (─Éß╗ënh: 150,644,761.30 USD, Hiß╗çn tß║íi: 116,990,369.57 USD) ΓÇö ng╞░ng giao dß╗ïch.
+      Γ£à [RESUME] B&H phß╗Ñc hß╗ôi 16.1% tß╗½ ─æ├íy sau 23 phi├¬n (cooldown 20 phi├¬n) ΓÇö mß╗ƒ lß║íi giao dß╗ïch tß║íi 2025-04-10T00:00:00.000000000.
+      ≡ƒÜ¿ [PORTFOLIO STOP-LOSS] Drawdown -20.29% v├áo 2026-01-02T00:00:00.000000000 (─Éß╗ënh: 125,460,805.26 USD, Hiß╗çn tß║íi: 100,004,531.43 USD) ΓÇö ng╞░ng giao dß╗ïch.
+      Γ£à [RESUME] B&H phß╗Ñc hß╗ôi 18.6% tß╗½ ─æ├íy sau 20 phi├¬n (cooldown 20 phi├¬n) ΓÇö mß╗ƒ lß║íi giao dß╗ïch tß║íi 2026-02-02T00:00:00.000000000.
+
+≡ƒÅå Kß║╛T QUß║ó WALK-FORWARD ROLLING BACKTEST HYBRID (2023ΓÇô2026):
+   ≡ƒôê Chiß║┐n l╞░ß╗úc : -12.65%
+   ≡ƒôª Buy&Hold  : +397.32%
+   META Rolling Hybrid: Strategy -12.65% vs B&H +397.32%
+   ≡ƒôè Sharpe    : -0.09
+   ≡ƒôë Max DD    : -43.69% (B&H: -34.15%)
+   ΓÜû∩╕Å  Calmar    : -0.29
+   ≡ƒöö Sß╗æ lß╗çnh   : 71
+   ≡ƒÑç Win Rate  : 49.30%
+   ≡ƒÆ╡ Profit F.  : 0.91
+
+≡ƒÄ» CHI TIß║╛T HIß╗åU SUß║ñT THEO PH├éN ─ÉOß║áN WINDOWS (Out-Of-Sample):
+-----------------------------------------------------------------------------------------------
+Window                                   | Strategy     | B&H          | Sharpe   | MDD
+-----------------------------------------------------------------------------------------------
+Window 1 (2023-01-03 ΓåÆ 2024-02-14)       |      +48.46% |     +268.86% | 1.62     | -2.71%
+Window 2 (2024-02-15 ΓåÆ 2025-03-31)       |      -21.20% |      +22.43% | -0.90    | -22.34%
+Window 3 (2025-04-01 ΓåÆ 2026-05-14)       |      -25.34% |       +7.13% | -1.38    | -32.38%
+-----------------------------------------------------------------------------------------------
+≡ƒÆ╛ ─É├ú l╞░u biß╗âu ─æß╗ô tß║íi: C:\Users\ACER\Documents\Stock-Opening-Price-Prediction\reports\figures\walk_forward_equity_curve_META.png
+≡ƒÆ╛ ─É├ú l╞░u hiß╗çu suß║Ñt backtest v├áo: C:\Users\ACER\Documents\Stock-Opening-Price-Prediction\config\performance_metrics_META.json

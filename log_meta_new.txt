@@ -1,0 +1,85 @@
+﻿
+================================================================================
+≡ƒöä Bß║«T ─Éß║ªU ROLLING WALK-FORWARD BACKTEST (HYBRID): META
+================================================================================
+─Éang tß║úi tß╗╖ gi├í USD/VND (USDVND=X) tß╗½ 2012-01-01 ─æß║┐n 2026-05-20...
+─Éang tß║úi Yahoo Finance: META...
+  Yahoo Finance: 3520 phi├¬n
+─Éang nß║íp dß╗» liß╗çu tr╞░ß╗¥ng: C:\Users\ACER\Documents\Stock-Opening-Price-Prediction\data\raw\META_prices.csv
+  Tß╗òng: 3520 phi├¬n (2012-05-18 ΓåÆ 2026-05-19)
+T├¡nh macro features...
+  [NEWS] Tß║úi v├á ph├ón t├¡ch cß║úm x├║c tin tß╗⌐c cho META...
+  [BREAKING] Injected breaking news for META: Global platform outage!
+≡ƒôÑ ─Éang tß║úi dß╗» liß╗çu cß╗ò tß╗⌐c cho META tß╗½ yfinance...
+   => ─É├ú tß║úi 9 ─æß╗út chia cß╗ò tß╗⌐c cho META
+─É├ú l╞░u cache: C:\Users\ACER\Documents\Stock-Opening-Price-Prediction\data\META_processed.csv
+Sß║╡n s├áng vß╗¢i 3517 phi├¬n.
+
+≡ƒÑç ─Éß╗ìc cß║Ñu h├¼nh tß╗æi ╞░u: d_model=64, heads=2, key_dim=16, batch_size=64
+
+Γû╢∩╕Å [WINDOW 2023] ΓÇö Huß║Ñn luyß╗çn: 2012 ΓåÆ 2022 (2673 phi├¬n) | Kiß╗âm thß╗¡: 2023 (250 phi├¬n)...
+      ≡ƒî│ [XGBOOST] Huß║Ñn luyß╗çn XGBoost mß╗¢i tr├¬n latent embedding fold 2023...
+ΓÅ│ ─Éang qu├⌐t nhanh bß╗Ö tham sß╗æ tß╗æi ╞░u cho XGBoost...
+≡ƒöÑ Tham sß╗æ tß╗æi ╞░u: {'subsample': 0.9, 'n_estimators': 150, 'max_depth': 4, 'learning_rate': 0.03, 'colsample_bytree': 1.0}
+      Γ£à Ho├án th├ánh dß╗▒ b├ío Hybrid out-of-sample 2023!
+
+Γû╢∩╕Å [WINDOW 2024] ΓÇö Huß║Ñn luyß╗çn: 2012 ΓåÆ 2023 (2923 phi├¬n) | Kiß╗âm thß╗¡: 2024 (252 phi├¬n)...
+      [WARM-START] Khß╗ƒi tß║ío trß╗ìng sß╗æ tß╗½ Window tr╞░ß╗¢c...
+      ≡ƒî│ [XGBOOST] Huß║Ñn luyß╗çn XGBoost mß╗¢i tr├¬n latent embedding fold 2024...
+ΓÅ│ ─Éang qu├⌐t nhanh bß╗Ö tham sß╗æ tß╗æi ╞░u cho XGBoost...
+≡ƒöÑ Tham sß╗æ tß╗æi ╞░u: {'subsample': 0.8, 'n_estimators': 200, 'max_depth': 3, 'learning_rate': 0.03, 'colsample_bytree': 0.8}
+      Γ£à Ho├án th├ánh dß╗▒ b├ío Hybrid out-of-sample 2024!
+
+Γû╢∩╕Å [WINDOW 2025] ΓÇö Huß║Ñn luyß╗çn: 2012 ΓåÆ 2024 (3175 phi├¬n) | Kiß╗âm thß╗¡: 2025 (250 phi├¬n)...
+      [WARM-START] Khß╗ƒi tß║ío trß╗ìng sß╗æ tß╗½ Window tr╞░ß╗¢c...
+      ≡ƒî│ [XGBOOST] Huß║Ñn luyß╗çn XGBoost mß╗¢i tr├¬n latent embedding fold 2025...
+ΓÅ│ ─Éang qu├⌐t nhanh bß╗Ö tham sß╗æ tß╗æi ╞░u cho XGBoost...
+≡ƒöÑ Tham sß╗æ tß╗æi ╞░u: {'subsample': 0.9, 'n_estimators': 150, 'max_depth': 4, 'learning_rate': 0.03, 'colsample_bytree': 1.0}
+      Γ£à Ho├án th├ánh dß╗▒ b├ío Hybrid out-of-sample 2025!
+
+Γû╢∩╕Å [WINDOW 2026] ΓÇö Huß║Ñn luyß╗çn: 2012 ΓåÆ 2025 (3425 phi├¬n) | Kiß╗âm thß╗¡: 2026 (92 phi├¬n)...
+      [WARM-START] Khß╗ƒi tß║ío trß╗ìng sß╗æ tß╗½ Window tr╞░ß╗¢c...
+      ≡ƒî│ [XGBOOST] Huß║Ñn luyß╗çn XGBoost mß╗¢i tr├¬n latent embedding fold 2026...
+ΓÅ│ ─Éang qu├⌐t nhanh bß╗Ö tham sß╗æ tß╗æi ╞░u cho XGBoost...
+≡ƒöÑ Tham sß╗æ tß╗æi ╞░u: {'subsample': 0.9, 'n_estimators': 150, 'max_depth': 4, 'learning_rate': 0.03, 'colsample_bytree': 1.0}
+      Γ£à Ho├án th├ánh dß╗▒ b├ío Hybrid out-of-sample 2026!
+
+≡ƒôè [SIMULATION 1] Chß║íy giß║ú lß║¡p Hybrid KH├öNG Lß╗îC (threshold=None)...
+   [DEBUG] Corr Final-Actual (T+1)=+0.0063 | Final mean=0.00394 | Actual mean=0.00219
+      ≡ƒÜ¿ [PORTFOLIO STOP-LOSS] Drawdown -21.68% v├áo 2024-08-07T00:00:00.000000000 (─Éß╗ënh: 151,566,248.27 USD, Hiß╗çn tß║íi: 118,700,662.37 USD) ΓÇö ng╞░ng giao dß╗ïch.
+      Γ£à [RESUME] B&H phß╗Ñc hß╗ôi 10.1% tß╗½ ─æ├íy sau 30 phi├¬n (cooldown 20 phi├¬n) ΓÇö mß╗ƒ lß║íi giao dß╗ïch tß║íi 2024-09-19T00:00:00.000000000.
+      ≡ƒÜ¿ [PORTFOLIO STOP-LOSS] Drawdown -20.37% v├áo 2025-03-06T00:00:00.000000000 (─Éß╗ënh: 121,658,058.45 USD, Hiß╗çn tß║íi: 96,873,272.08 USD) ΓÇö ng╞░ng giao dß╗ïch.
+      Γ£à [RESUME] B&H phß╗Ñc hß╗ôi 16.1% tß╗½ ─æ├íy sau 25 phi├¬n (cooldown 20 phi├¬n) ΓÇö mß╗ƒ lß║íi giao dß╗ïch tß║íi 2025-04-10T00:00:00.000000000.
+      ≡ƒÜ¿ [PORTFOLIO STOP-LOSS] Drawdown -25.95% v├áo 2025-10-30T00:00:00.000000000 (─Éß╗ënh: 103,188,128.30 USD, Hiß╗çn tß║íi: 76,406,120.04 USD) ΓÇö ng╞░ng giao dß╗ïch.
+      Γ£à [RESUME] B&H phß╗Ñc hß╗ôi 12.3% tß╗½ ─æ├íy sau 25 phi├¬n (cooldown 20 phi├¬n) ΓÇö mß╗ƒ lß║íi giao dß╗ïch tß║íi 2025-12-05T00:00:00.000000000.
+
+≡ƒôè [SIMULATION 2] Chß║íy giß║ú lß║¡p Hybrid C├ô Lß╗îC (threshold=1.2)...
+   [DEBUG] Corr Final-Actual (T+1)=+0.0063 | Final mean=0.00394 | Actual mean=0.00219
+      ≡ƒÜ¿ [PORTFOLIO STOP-LOSS] Drawdown -20.81% v├áo 2024-07-24T00:00:00.000000000 (─Éß╗ënh: 146,757,287.48 USD, Hiß╗çn tß║íi: 116,221,781.83 USD) ΓÇö ng╞░ng giao dß╗ïch.
+      Γ£à [RESUME] B&H phß╗Ñc hß╗ôi 16.2% tß╗½ ─æ├íy sau 20 phi├¬n (cooldown 20 phi├¬n) ΓÇö mß╗ƒ lß║íi giao dß╗ïch tß║íi 2024-08-21T00:00:00.000000000.
+      ≡ƒÜ¿ [PORTFOLIO STOP-LOSS] Drawdown -20.37% v├áo 2025-03-06T00:00:00.000000000 (─Éß╗ënh: 120,517,611.88 USD, Hiß╗çn tß║íi: 95,965,162.98 USD) ΓÇö ng╞░ng giao dß╗ïch.
+      Γ£à [RESUME] B&H phß╗Ñc hß╗ôi 16.1% tß╗½ ─æ├íy sau 25 phi├¬n (cooldown 20 phi├¬n) ΓÇö mß╗ƒ lß║íi giao dß╗ïch tß║íi 2025-04-10T00:00:00.000000000.
+      ≡ƒÜ¿ [PORTFOLIO STOP-LOSS] Drawdown -22.73% v├áo 2025-10-30T00:00:00.000000000 (─Éß╗ënh: 102,220,822.49 USD, Hiß╗çn tß║íi: 78,982,605.11 USD) ΓÇö ng╞░ng giao dß╗ïch.
+      Γ£à [RESUME] B&H phß╗Ñc hß╗ôi 12.3% tß╗½ ─æ├íy sau 25 phi├¬n (cooldown 20 phi├¬n) ΓÇö mß╗ƒ lß║íi giao dß╗ïch tß║íi 2025-12-05T00:00:00.000000000.
+
+≡ƒÅå Kß║╛T QUß║ó WALK-FORWARD ROLLING BACKTEST HYBRID (2023ΓÇô2026):
+Chß╗ë sß╗æ                    | KH├öNG Lß╗îC (None)     | C├ô Lß╗îC (1.2)        
+------------------------------------------------------------------------
+Tß╗╖ suß║Ñt Chiß║┐n l╞░ß╗úc        |             -30.83% |             -30.80%
+Tß╗╖ suß║Ñt Buy & Hold        |            +397.32% |            +397.32%
+Hß╗ç sß╗æ Sharpe              |               -0.39 |               -0.42
+Max Drawdown              |             -55.68% |             -54.20%
+Sß╗æ lß╗çnh                   |                  86 |                  78
+Tß╗╖ lß╗ç thß║»ng               |              45.35% |              46.15%
+Profit Factor             |                0.79 |                0.78
+
+≡ƒÄ» CHI TIß║╛T HIß╗åU SUß║ñT THEO PH├éN ─ÉOß║áN WINDOWS (Out-Of-Sample):
+--------------------------------------------------------------------------------------------------------------
+Window                              | No Flt Return  | No Flt Sharpe | Flt Return   | Flt Sharpe  | B&H
+--------------------------------------------------------------------------------------------------------------
+Window 1 (2023-01-03 ΓåÆ 2024-02-14)  |        +36.32% | 1.39          |      +32.39% | 1.32        |     +268.86%
+Window 2 (2024-02-15 ΓåÆ 2025-03-31)  |        -30.91% | -1.29         |      -27.51% | -1.12       |      +22.43%
+Window 3 (2025-04-01 ΓåÆ 2026-05-14)  |        -28.60% | -1.38         |      -27.89% | -1.44       |       +7.13%
+--------------------------------------------------------------------------------------------------------------
+≡ƒÆ╛ ─É├ú l╞░u biß╗âu ─æß╗ô tß║íi: C:\Users\ACER\Documents\Stock-Opening-Price-Prediction\reports\figures\walk_forward_equity_curve_META.png
+≡ƒÆ╛ ─É├ú l╞░u hiß╗çu suß║Ñt backtest v├áo: C:\Users\ACER\Documents\Stock-Opening-Price-Prediction\config\performance_metrics_META.json

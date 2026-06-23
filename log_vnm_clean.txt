@@ -1,0 +1,89 @@
+[*********************100%***********************]  1 of 1 completed
+
+================================================================================
+🔄 BẮT ĐẦU ROLLING WALK-FORWARD BACKTEST (HYBRID): VNM.VN
+================================================================================
+Đang tải tỷ giá USD/VND (USDVND=X) từ 2012-01-01 đến 2026-05-20...
+Đang tải Yahoo Finance: VNM.VN...
+  Yahoo Finance: 3654 phiên
+Đang nạp dữ liệu trường: C:\Users\ACER\Documents\Stock-Opening-Price-Prediction\data\raw\VNM_prices.csv
+  Tổng: 3535 phiên (2012-03-20 → 2026-05-19)
+Tính macro features...
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+I0000 00:00:1782074215.925144   96364 cpu_feature_guard.cc:227] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: SSE3 SSE4.1 SSE4.2 AVX AVX2 AVX_VNNI FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+WARNING:tensorflow:From C:\Users\ACER\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\keras\src\backend\tensorflow\core.py:232: The name tf.placeholder is deprecated. Please use tf.compat.v1.placeholder instead.
+
+WARNING:tensorflow:TensorFlow GPU support is not available on native Windows for TensorFlow >= 2.11. Even if CUDA/cuDNN are installed, GPU will not be used. Please use WSL2 or the TensorFlow-DirectML plugin.
+E0000 00:00:1782074219.508442   96364 node_def_util.cc:682] NodeDef mentions attribute use_unbounded_threadpool which is not in the op definition: Op<name=MapDataset; signature=input_dataset:variant, other_arguments: -> handle:variant; attr=f:func; attr=Targuments:list(type),min=0; attr=output_types:list(type),min=1; attr=output_shapes:list(shape),min=1; attr=use_inter_op_parallelism:bool,default=true; attr=preserve_cardinality:bool,default=false; attr=force_synchronous:bool,default=false; attr=metadata:string,default=""> This may be expected if your graph generating binary is newer  than this binary. Unknown attributes will be ignored. NodeDef: {{node ParallelMapDatasetV2/_16}}
+E0000 00:00:1782074249.853674   96364 node_def_util.cc:682] NodeDef mentions attribute use_unbounded_threadpool which is not in the op definition: Op<name=MapDataset; signature=input_dataset:variant, other_arguments: -> handle:variant; attr=f:func; attr=Targuments:list(type),min=0; attr=output_types:list(type),min=1; attr=output_shapes:list(shape),min=1; attr=use_inter_op_parallelism:bool,default=true; attr=preserve_cardinality:bool,default=false; attr=force_synchronous:bool,default=false; attr=metadata:string,default=""> This may be expected if your graph generating binary is newer  than this binary. Unknown attributes will be ignored. NodeDef: {{node ParallelMapDatasetV2/_16}}
+E0000 00:00:1782074370.265088   96364 node_def_util.cc:682] NodeDef mentions attribute use_unbounded_threadpool which is not in the op definition: Op<name=MapDataset; signature=input_dataset:variant, other_arguments: -> handle:variant; attr=f:func; attr=Targuments:list(type),min=0; attr=output_types:list(type),min=1; attr=output_shapes:list(shape),min=1; attr=use_inter_op_parallelism:bool,default=true; attr=preserve_cardinality:bool,default=false; attr=force_synchronous:bool,default=false; attr=metadata:string,default=""> This may be expected if your graph generating binary is newer  than this binary. Unknown attributes will be ignored. NodeDef: {{node ParallelMapDatasetV2/_14}}
+E0000 00:00:1782074440.240424   96364 node_def_util.cc:682] NodeDef mentions attribute use_unbounded_threadpool which is not in the op definition: Op<name=MapDataset; signature=input_dataset:variant, other_arguments: -> handle:variant; attr=f:func; attr=Targuments:list(type),min=0; attr=output_types:list(type),min=1; attr=output_shapes:list(shape),min=1; attr=use_inter_op_parallelism:bool,default=true; attr=preserve_cardinality:bool,default=false; attr=force_synchronous:bool,default=false; attr=metadata:string,default=""> This may be expected if your graph generating binary is newer  than this binary. Unknown attributes will be ignored. NodeDef: {{node ParallelMapDatasetV2/_14}}
+E0000 00:00:1782074469.784599   96364 node_def_util.cc:682] NodeDef mentions attribute use_unbounded_threadpool which is not in the op definition: Op<name=MapDataset; signature=input_dataset:variant, other_arguments: -> handle:variant; attr=f:func; attr=Targuments:list(type),min=0; attr=output_types:list(type),min=1; attr=output_shapes:list(shape),min=1; attr=use_inter_op_parallelism:bool,default=true; attr=preserve_cardinality:bool,default=false; attr=force_synchronous:bool,default=false; attr=metadata:string,default=""> This may be expected if your graph generating binary is newer  than this binary. Unknown attributes will be ignored. NodeDef: {{node ParallelMapDatasetV2/_16}}
+E0000 00:00:1782074507.348428   96364 node_def_util.cc:682] NodeDef mentions attribute use_unbounded_threadpool which is not in the op definition: Op<name=MapDataset; signature=input_dataset:variant, other_arguments: -> handle:variant; attr=f:func; attr=Targuments:list(type),min=0; attr=output_types:list(type),min=1; attr=output_shapes:list(shape),min=1; attr=use_inter_op_parallelism:bool,default=true; attr=preserve_cardinality:bool,default=false; attr=force_synchronous:bool,default=false; attr=metadata:string,default=""> This may be expected if your graph generating binary is newer  than this binary. Unknown attributes will be ignored. NodeDef: {{node ParallelMapDatasetV2/_14}}
+E0000 00:00:1782074582.404708   96364 node_def_util.cc:682] NodeDef mentions attribute use_unbounded_threadpool which is not in the op definition: Op<name=MapDataset; signature=input_dataset:variant, other_arguments: -> handle:variant; attr=f:func; attr=Targuments:list(type),min=0; attr=output_types:list(type),min=1; attr=output_shapes:list(shape),min=1; attr=use_inter_op_parallelism:bool,default=true; attr=preserve_cardinality:bool,default=false; attr=force_synchronous:bool,default=false; attr=metadata:string,default=""> This may be expected if your graph generating binary is newer  than this binary. Unknown attributes will be ignored. NodeDef: {{node ParallelMapDatasetV2/_14}}
+E0000 00:00:1782074617.286198   96364 node_def_util.cc:682] NodeDef mentions attribute use_unbounded_threadpool which is not in the op definition: Op<name=MapDataset; signature=input_dataset:variant, other_arguments: -> handle:variant; attr=f:func; attr=Targuments:list(type),min=0; attr=output_types:list(type),min=1; attr=output_shapes:list(shape),min=1; attr=use_inter_op_parallelism:bool,default=true; attr=preserve_cardinality:bool,default=false; attr=force_synchronous:bool,default=false; attr=metadata:string,default=""> This may be expected if your graph generating binary is newer  than this binary. Unknown attributes will be ignored. NodeDef: {{node ParallelMapDatasetV2/_16}}
+E0000 00:00:1782074701.473969   96364 node_def_util.cc:682] NodeDef mentions attribute use_unbounded_threadpool which is not in the op definition: Op<name=MapDataset; signature=input_dataset:variant, other_arguments: -> handle:variant; attr=f:func; attr=Targuments:list(type),min=0; attr=output_types:list(type),min=1; attr=output_shapes:list(shape),min=1; attr=use_inter_op_parallelism:bool,default=true; attr=preserve_cardinality:bool,default=false; attr=force_synchronous:bool,default=false; attr=metadata:string,default=""> This may be expected if your graph generating binary is newer  than this binary. Unknown attributes will be ignored. NodeDef: {{node ParallelMapDatasetV2/_14}}
+E0000 00:00:1782074757.894018   96364 node_def_util.cc:682] NodeDef mentions attribute use_unbounded_threadpool which is not in the op definition: Op<name=MapDataset; signature=input_dataset:variant, other_arguments: -> handle:variant; attr=f:func; attr=Targuments:list(type),min=0; attr=output_types:list(type),min=1; attr=output_shapes:list(shape),min=1; attr=use_inter_op_parallelism:bool,default=true; attr=preserve_cardinality:bool,default=false; attr=force_synchronous:bool,default=false; attr=metadata:string,default=""> This may be expected if your graph generating binary is newer  than this binary. Unknown attributes will be ignored. NodeDef: {{node ParallelMapDatasetV2/_14}}
+E0000 00:00:1782074790.621596   96364 node_def_util.cc:682] NodeDef mentions attribute use_unbounded_threadpool which is not in the op definition: Op<name=MapDataset; signature=input_dataset:variant, other_arguments: -> handle:variant; attr=f:func; attr=Targuments:list(type),min=0; attr=output_types:list(type),min=1; attr=output_shapes:list(shape),min=1; attr=use_inter_op_parallelism:bool,default=true; attr=preserve_cardinality:bool,default=false; attr=force_synchronous:bool,default=false; attr=metadata:string,default=""> This may be expected if your graph generating binary is newer  than this binary. Unknown attributes will be ignored. NodeDef: {{node ParallelMapDatasetV2/_16}}
+E0000 00:00:1782074836.688622   96364 node_def_util.cc:682] NodeDef mentions attribute use_unbounded_threadpool which is not in the op definition: Op<name=MapDataset; signature=input_dataset:variant, other_arguments: -> handle:variant; attr=f:func; attr=Targuments:list(type),min=0; attr=output_types:list(type),min=1; attr=output_shapes:list(shape),min=1; attr=use_inter_op_parallelism:bool,default=true; attr=preserve_cardinality:bool,default=false; attr=force_synchronous:bool,default=false; attr=metadata:string,default=""> This may be expected if your graph generating binary is newer  than this binary. Unknown attributes will be ignored. NodeDef: {{node ParallelMapDatasetV2/_14}}
+E0000 00:00:1782074896.594688   96364 node_def_util.cc:682] NodeDef mentions attribute use_unbounded_threadpool which is not in the op definition: Op<name=MapDataset; signature=input_dataset:variant, other_arguments: -> handle:variant; attr=f:func; attr=Targuments:list(type),min=0; attr=output_types:list(type),min=1; attr=output_shapes:list(shape),min=1; attr=use_inter_op_parallelism:bool,default=true; attr=preserve_cardinality:bool,default=false; attr=force_synchronous:bool,default=false; attr=metadata:string,default=""> This may be expected if your graph generating binary is newer  than this binary. Unknown attributes will be ignored. NodeDef: {{node ParallelMapDatasetV2/_14}}
+  [NEWS] Tải và phân tích cảm xúc tin tức cho VNM.VN...
+📥 Đang tải dữ liệu cổ tức cho VNM.VN từ yfinance...
+   => Đã tải 36 đợt chia cổ tức cho VNM.VN
+Đã lưu cache: C:\Users\ACER\Documents\Stock-Opening-Price-Prediction\data\VNM.VN_processed.csv
+Sẵn sàng với 3531 phiên.
+
+🥇 Đọc cấu hình tối ưu: d_model=128, heads=2, key_dim=16, batch_size=32
+
+▶️ [WINDOW 2023] — Huấn luyện: 2012 → 2022 (2694 phiên) | Kiểm thử: 2023 (249 phiên)...
+      🌳 [XGBOOST] Huấn luyện XGBoost mới trên latent embedding fold 2023...
+⏳ Đang quét nhanh bộ tham số tối ưu cho XGBoost...
+🔥 Tham số tối ưu: {'subsample': 0.8, 'n_estimators': 200, 'max_depth': 3, 'learning_rate': 0.03, 'colsample_bytree': 0.8}
+      ✅ Hoàn thành dự báo Hybrid out-of-sample 2023!
+
+▶️ [WINDOW 2024] — Huấn luyện: 2012 → 2023 (2943 phiên) | Kiểm thử: 2024 (250 phiên)...
+      [WARM-START] Khởi tạo trọng số từ Window trước...
+      🌳 [XGBOOST] Huấn luyện XGBoost mới trên latent embedding fold 2024...
+⏳ Đang quét nhanh bộ tham số tối ưu cho XGBoost...
+🔥 Tham số tối ưu: {'subsample': 0.8, 'n_estimators': 200, 'max_depth': 3, 'learning_rate': 0.03, 'colsample_bytree': 0.8}
+      ✅ Hoàn thành dự báo Hybrid out-of-sample 2024!
+
+▶️ [WINDOW 2025] — Huấn luyện: 2012 → 2024 (3193 phiên) | Kiểm thử: 2025 (249 phiên)...
+      [WARM-START] Khởi tạo trọng số từ Window trước...
+      🌳 [XGBOOST] Huấn luyện XGBoost mới trên latent embedding fold 2025...
+⏳ Đang quét nhanh bộ tham số tối ưu cho XGBoost...
+🔥 Tham số tối ưu: {'subsample': 0.8, 'n_estimators': 200, 'max_depth': 3, 'learning_rate': 0.03, 'colsample_bytree': 0.8}
+      ✅ Hoàn thành dự báo Hybrid out-of-sample 2025!
+
+▶️ [WINDOW 2026] — Huấn luyện: 2012 → 2025 (3442 phiên) | Kiểm thử: 2026 (89 phiên)...
+      [WARM-START] Khởi tạo trọng số từ Window trước...
+      🌳 [XGBOOST] Huấn luyện XGBoost mới trên latent embedding fold 2026...
+⏳ Đang quét nhanh bộ tham số tối ưu cho XGBoost...
+🔥 Tham số tối ưu: {'subsample': 0.8, 'n_estimators': 200, 'max_depth': 5, 'learning_rate': 0.03, 'colsample_bytree': 0.8}
+      ✅ Hoàn thành dự báo Hybrid out-of-sample 2026!
+
+📊 [SIMULATION 1] Chạy giả lập Hybrid KHÔNG LỌC (threshold=None)...
+   [DEBUG] Corr Final-Actual (T+1)=+0.0006 | Final mean=-0.00020 | Actual mean=-0.00000
+
+🏆 KẾT QUẢ WALK-FORWARD ROLLING BACKTEST HYBRID (2023–2026):
+Chỉ số                    | KHÔNG LỌC (None)     | CÓ LỌC (None)       
+------------------------------------------------------------------------
+Tỷ suất Chiến lược        |              -1.20% |              -1.20%
+Tỷ suất Buy & Hold        |              -9.95% |              -9.95%
+Hệ số Sharpe              |               -0.14 |               -0.14
+Max Drawdown              |              -5.75% |              -5.75%
+Số lệnh                   |                   5 |                   5
+Tỷ lệ thắng               |              40.00% |              40.00%
+Profit Factor             |                0.79 |                0.79
+
+🎯 CHI TIẾT HIỆU SUẤT THEO PHÂN ĐOẠN WINDOWS (Out-Of-Sample):
+--------------------------------------------------------------------------------------------------------------
+Window                              | No Flt Return  | No Flt Sharpe | Flt Return   | Flt Sharpe  | B&H
+--------------------------------------------------------------------------------------------------------------
+Window 1 (2023-01-03 → 2024-02-19)  |         +1.06% | 0.84          |       +1.06% | 0.84        |       -7.17%
+Window 2 (2024-02-20 → 2025-04-01)  |         -4.46% | -2.16         |       -4.46% | -2.16       |      -10.96%
+Window 3 (2025-04-02 → 2026-05-14)  |         +2.32% | 0.59          |       +2.32% | 0.59        |       +5.72%
+--------------------------------------------------------------------------------------------------------------
+💾 Đã lưu biểu đồ tại: C:\Users\ACER\Documents\Stock-Opening-Price-Prediction\reports\figures\walk_forward_equity_curve_VNM.VN.png
+💾 Đã lưu hiệu suất backtest vào: C:\Users\ACER\Documents\Stock-Opening-Price-Prediction\config\performance_metrics_VNM.VN.json

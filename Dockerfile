@@ -22,6 +22,5 @@ ENV PYTHONUNBUFFERED=1
 ENV HOST=0.0.0.0
 ENV PORT=8000
 
-# Không cần EXPOSE cổng 8000 vì không chạy web server
-# Lệnh khởi chạy: Huấn luyện và backtest toàn bộ pipeline
-CMD ["python", "scripts/run_pipeline.py"]
+# Lệnh khởi chạy mặc định (nếu không dùng docker-compose)
+CMD ["python", "scripts/run_training_transformer.py"]

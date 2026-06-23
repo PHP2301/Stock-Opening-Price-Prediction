@@ -1,7 +1,6 @@
 version: '3.8'
 
 services:
-  # Dịch vụ 1: Chuyên Huấn luyện & Backtest mô hình (chạy xong tự tắt)
   trainer:
     build: .
     container_name: stock-trainer
@@ -13,22 +12,10 @@ services:
       - ./reports:/app/reports
       - ./config:/app/config
       - ./logs:/app/logs
-
-  # Dịch vụ 2: Chạy trang web giao diện & API (chạy liên tục)
-  web-api:
-    build: .
-    container_name: stock-prediction-api
-    command: ["python", "src/web_runner/run_web.py"]
-    ports:
-      - "8000:8000"
-    environment:
-      - HOST=0.0.0.0
-      - PORT=8000
-      - RELOAD=true
-      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
-    volumes:
-      - ./models:/app/models
-      - ./data:/app/data
-      - ./logs:/app/logs
-      - ./config:/app/config
+    command: >
+      sh -c "
+      python scripts/run_training_transformer.py $$TICKER &&
+      python scripts/run_walk_forward_backtest.py $$TICKER &&
+      python scripts/predict.py $${TICKER:-ALL}
+      "
 
