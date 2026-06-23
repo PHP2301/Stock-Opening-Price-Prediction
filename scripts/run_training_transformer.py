@@ -1,6 +1,11 @@
 import datetime
 import json
 import os
+
+# Bật Determinism cho TensorFlow (Phải đặt trước khi import tensorflow/keras)
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+os.environ['TF_DETERMINISTIC_OPS']  = '1'
+
 import random
 import sys
 # Cấu hình UTF-8 cho console để tránh lỗi UnicodeEncodeError trên Windows
@@ -24,6 +29,7 @@ from sklearn.model_selection import TimeSeriesSplit
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, LearningRateScheduler
 from tensorflow.keras.models import Model
 import tensorflow as tf
+tf.config.experimental.enable_op_determinism()
 import math
 import joblib
 import yfinance as yf

@@ -22,8 +22,6 @@ ENV PYTHONUNBUFFERED=1
 ENV HOST=0.0.0.0
 ENV PORT=8000
 
-# Mở cổng API
-EXPOSE 8000
-
-# Lệnh khởi chạy server web
-CMD ["python", "src/web_runner/run_web.py"]
+# Không cần EXPOSE cổng 8000 vì không chạy web server
+# Lệnh khởi chạy: Huấn luyện và backtest toàn bộ pipeline
+CMD ["python", "scripts/run_pipeline.py"]

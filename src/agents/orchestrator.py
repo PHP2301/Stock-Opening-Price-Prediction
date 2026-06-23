@@ -23,7 +23,7 @@ class Orchestrator:
     def __init__(self):
         pass
 
-    def run_debate(self, ticker: str, close_price: float, tech_rep: str, sent_rep: str, macro_rep: str, risk_rep: str) -> TradingDecision:
+    def run_debate(self, ticker: str, close_price: float, tech_rep: str, sent_rep: str, macro_rep: str, risk_rep: str, forecast_return: float = 0.0) -> TradingDecision:
         # Tỷ lệ giao dịch cho từng mã
         TRADING_ENABLED = {
             'VNM.VN': True,    # Sharpe cải thiện rõ rệt, MDD -2.52% sau nâng cấp
@@ -50,6 +50,29 @@ class Orchestrator:
                 debate_summary="Chế độ tự động giao dịch cho mã này hiện đang bị khóa để bảo vệ tài khoản (Kill Switch).",
                 reasoning=reasoning
             )
+
+        # Trích xuất bias từ các báo cáo phụ trước (dùng cho cả LLM và Fallback)
+        def extract_bias_line(report_text, label):
+            for line in report_text.splitlines():
+                if label in line:
+                    return line
+            return ""
+
+        tech_bias_line = extract_bias_line(tech_rep, "Technical Bias:")
+        sent_bias_line = extract_bias_line(sent_rep, "Sentiment Bias:")
+        macro_bias_line = extract_bias_line(macro_rep, "Macro Bias:")
+        risk_line = extract_bias_line(risk_rep, "Risk Level:")
+
+        is_tech_bull = "Bullish" in tech_bias_line
+        is_tech_bear = "Bearish" in tech_bias_line
+        is_sent_bull = "Positive" in sent_bias_line or "Risk-On" in sent_bias_line
+        is_sent_bear = "Negative" in sent_bias_line or "Risk-Off" in sent_bias_line
+        is_macro_bull = "Bullish" in macro_bias_line or "Risk-On" in macro_bias_line
+        is_macro_bear = "Bearish" in macro_bias_line or "Risk-Off" in macro_bias_line
+
+        bull_votes = sum([is_tech_bull, is_sent_bull, is_macro_bull])
+        bear_votes = sum([is_tech_bear, is_sent_bear, is_macro_bear])
+        risk_upper = risk_line.upper()
 
         # 1. Check if LLM API Key is configured
         model_name = None
@@ -90,32 +113,57 @@ class Orchestrator:
 
                 # Synchronous run (blocking call for simplicity in pipeline)
                 result = agent.run_sync(prompt)
-                return result.data
+                decision = result.data
+                # Áp dụng kịch bản quyết đoán (Tất tay / Bán chắc chắn bao lời) cho kết quả LLM
+                if bull_votes >= 3 and "HIGH" not in risk_upper and "CRITICAL" not in risk_upper and "EXTREME" not in risk_upper:
+                    decision.action = "BUY"
+                    decision.confidence_score = 0.99
+                    decision.reasoning = "🔥 CƠ HỘI VÀNG (ALL-IN): Đồng thuận tuyệt đối 3/3 chuyên gia cùng mức rủi ro an toàn. Tín hiệu cực kỳ chắc chắn để gom hàng tất tay!"
+                elif bear_votes >= 3:
+                    decision.action = "SELL"
+                    decision.confidence_score = 0.99
+                    decision.reasoning = "🚨 KHẨN CẤP (BÁN CHẮC CHẮN BAO LỜI): Sự đồng thuận giảm giá tuyệt đối từ 3/3 chuyên gia. Xu hướng đảo chiều đã rõ như ban ngày, khuyến nghị bán tháo/chốt lời sạch vị thế ngay lập tức!"
+                    decision.stop_loss = 0.0
+                    decision.take_profit = 0.0
+                else:
+                    # Điều chỉnh độ tự tin dựa trên độ lớn và hướng của dự báo lợi nhuận tương lai (forecast_return)
+                    boost = 0.0
+                    if decision.action == "BUY" and forecast_return > 0:
+                        boost = min(forecast_return * 2, 0.15)
+                    elif decision.action == "SELL" and forecast_return < 0:
+                        boost = min(abs(forecast_return) * 2, 0.15)
+                    
+                    decision.confidence_score += boost
+                    decision.confidence_score = min(decision.confidence_score, 1.0)
+                
+                # Thêm thông báo dự báo tương lai
+                if forecast_return > 0:
+                    decision.reasoning += (
+                        f" Mô hình AI dự báo giá có thể tăng khoảng "
+                        f"{forecast_return*100:.1f}% trong giai đoạn tới."
+                    )
+                elif forecast_return < 0:
+                    decision.reasoning += (
+                        f" Mô hình AI dự báo giá có thể giảm khoảng "
+                        f"{abs(forecast_return)*100:.1f}% trong giai đoạn tới."
+                    )
+                
+                return decision
             except Exception as e:
                 # If LLM execution fails, drop down to the heuristic fallback
                 pass
 
         # 2. Heuristic Fallback Mode
-        # Parse biases from sub-reports (only the specific bias lines to avoid matching text in parentheses)
-        def extract_bias_line(report_text, label):
-            for line in report_text.splitlines():
-                if label in line:
-                    return line
-            return ""
-
-        tech_bias_line = extract_bias_line(tech_rep, "Technical Bias:")
-        sent_bias_line = extract_bias_line(sent_rep, "Sentiment Bias:")
-        macro_bias_line = extract_bias_line(macro_rep, "Macro Bias:")
-
-        is_tech_bull = "Bullish" in tech_bias_line
-        is_tech_bear = "Bearish" in tech_bias_line
-        is_sent_bull = "Positive" in sent_bias_line or "Risk-On" in sent_bias_line
-        is_sent_bear = "Negative" in sent_bias_line or "Risk-Off" in sent_bias_line
-        is_macro_bull = "Bullish" in macro_bias_line or "Risk-On" in macro_bias_line
-        is_macro_bear = "Bearish" in macro_bias_line or "Risk-Off" in macro_bias_line
-
-        bull_votes = sum([is_tech_bull, is_sent_bull, is_macro_bull])
-        bear_votes = sum([is_tech_bear, is_sent_bear, is_macro_bear])
+        # Điều chỉnh trọng số MUA/BÁN dựa trên mức độ rủi ro (Risk Level)
+        if "CRITICAL" in risk_upper or "EXTREME" in risk_upper:
+            bull_votes = 0
+            bear_votes += 2
+        elif "HIGH" in risk_upper:
+            bull_votes = max(0, bull_votes - 1)
+            bear_votes += 1
+        elif "LOW" in risk_upper or "MINIMAL" in risk_upper:
+            bull_votes += 1
+            bear_votes = max(0, bear_votes - 1)
 
         # Parse proposed stop_loss / take_profit from risk_rep
         sl_match = re.search(r"Suggested Stop Loss.*:\s*([0-9,.]+)", risk_rep)
@@ -128,22 +176,69 @@ class Orchestrator:
             stop_loss = close_price * 0.95
             take_profit = close_price * 1.10
 
-        if bull_votes > bear_votes and bull_votes >= 2:
+        # 3. Phân loại quyết định giao dịch theo phiếu bầu
+        if bull_votes >= 3 and "HIGH" not in risk_upper and "CRITICAL" not in risk_upper and "EXTREME" not in risk_upper:
+            # Kịch bản MUA cực kỳ chắc chắn (Tất tay / All-in)
             action = "BUY"
-            confidence = 0.6 + 0.1 * (bull_votes - bear_votes)
-            reasoning = "Đồng thuận tín hiệu MUA vào từ tất cả các chuyên gia (Kỹ thuật tốt, Tin tức tích cực và Vĩ mô ổn định)."
+            confidence = 0.99
+            reasoning = "🔥 CƠ HỘI VÀNG (ALL-IN): Đồng thuận tuyệt đối 3/3 chuyên gia cùng mức rủi ro an toàn. Tín hiệu cực kỳ chắc chắn để gom hàng tất tay!"
+        elif bear_votes >= 3:
+            # Kịch bản BÁN cực kỳ chắc chắn (Chốt lời bao lời / Bán tháo khẩn cấp)
+            action = "SELL"
+            confidence = 0.99
+            reasoning = "🚨 KHẨN CẤP (BÁN CHẮC CHẮN BAO LỜI): Sự đồng thuận giảm giá tuyệt đối từ 3/3 chuyên gia. Xu hướng đảo chiều đã rõ như ban ngày, khuyến nghị bán tháo/chốt lời sạch vị thế ngay lập tức!"
+            stop_loss = 0.0
+            take_profit = 0.0
+        elif bull_votes > bear_votes and bull_votes >= 2:
+            action = "BUY"
+            confidence = min(0.95, 0.5 + 0.15 * (bull_votes - bear_votes))
+            reasoning = f"Tín hiệu MUA đồng thuận từ các chuyên gia (Bull: {bull_votes}, Bear: {bear_votes})."
+            if "HIGH" in risk_upper:
+                confidence = max(0.4, confidence - 0.20)
+                reasoning += " Lưu ý: Mức rủi ro CAO, khuyến nghị đi kèm giảm tỷ trọng."
         elif bear_votes > bull_votes and bear_votes >= 2:
             action = "SELL"
-            confidence = 0.6 + 0.1 * (bear_votes - bull_votes)
-            reasoning = "Đồng thuận tín hiệu BÁN ra từ các chuyên gia (Kỹ thuật xấu, Tin tức tiêu cực và Vĩ mô bất ổn)."
+            confidence = min(0.95, 0.5 + 0.15 * (bear_votes - bull_votes))
+            reasoning = f"Tín hiệu BÁN đồng thuận từ các chuyên gia (Bear: {bear_votes}, Bull: {bull_votes})."
+            if "CRITICAL" in risk_upper or "EXTREME" in risk_upper:
+                confidence = min(0.99, confidence + 0.15)
+                reasoning += " Cảnh báo: Rủi ro CỰC KỲ NGHIÊM TRỌNG, ưu tiên thoát vị thế bảo vệ tài sản."
             stop_loss = 0.0
             take_profit = 0.0
         else:
+            # Xử lý các tình huống giằng co hoặc thiếu đồng thuận
             action = "HOLD"
             confidence = 0.5
-            reasoning = "Tín hiệu thị trường đang trái chiều và chưa rõ ràng; khuyến nghị tiếp tục đứng ngoài quan sát để bảo toàn dòng tiền."
+            if bull_votes == bear_votes and bull_votes > 0:
+                reasoning = f"Thị trường giằng co cực mạnh (Bull: {bull_votes} vs Bear: {bear_votes}). Khuyến nghị đứng ngoài quan sát."
+            elif "HIGH" in risk_upper or "CRITICAL" in risk_upper:
+                reasoning = f"Hệ thống khóa giao dịch (HOLD) do mức rủi ro quá cao ({risk_line.strip() if ':' in risk_line else risk_line})."
+            else:
+                reasoning = "Không đủ số lượng phiếu đồng thuận (tối thiểu 2 phiếu cùng chiều) từ các chuyên gia để mở vị thế."
             stop_loss = 0.0
             take_profit = 0.0
+
+        # Điều chỉnh độ tự tin dựa trên độ lớn và hướng của dự báo lợi nhuận tương lai (forecast_return)
+        boost = 0.0
+        if action == "BUY" and forecast_return > 0:
+            boost = min(forecast_return * 2, 0.15)
+        elif action == "SELL" and forecast_return < 0:
+            boost = min(abs(forecast_return) * 2, 0.15)
+
+        confidence += boost
+        confidence = min(confidence, 1.0)
+
+        # Thêm thông báo dự báo tương lai
+        if forecast_return > 0:
+            reasoning += (
+                f" Mô hình AI dự báo giá có thể tăng khoảng "
+                f"{forecast_return*100:.1f}% trong giai đoạn tới."
+            )
+        elif forecast_return < 0:
+            reasoning += (
+                f" Mô hình AI dự báo giá có thể giảm khoảng "
+                f"{abs(forecast_return)*100:.1f}% trong giai đoạn tới."
+            )
 
         # Tạo tóm tắt tranh luận tiếng Việt đơn giản dễ hiểu
         debate = (

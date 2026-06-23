@@ -38,6 +38,12 @@ ALERT_THRESHOLD = {
     'META':   0.025,  # 2.5%
 }
 
+VOL_FILTER_THRESHOLD = {
+    'VNM.VN': None,
+    'GOOGL':  1.2,
+    'META':   1.2,
+}
+
 
 def main():
     args_cleaned  = sys.argv
@@ -167,7 +173,7 @@ def main():
         xgb_pred_scaled = xgb_model.predict(X_test_hybrid)
         final_returns    = dt.target_scaler.inverse_transform(xgb_pred_scaled)
 
-        # Threshold: CLI override hoặc per-ticker default
+         # Threshold: CLI override hoặc per-ticker default
         if cli_threshold is not None:
             cur_threshold_buy = cli_threshold
         else:
@@ -175,11 +181,27 @@ def main():
         cur_threshold_sell = -cur_threshold_buy
         print(f"   🎯 Threshold buy={cur_threshold_buy*100:.2f}% | sell={cur_threshold_sell*100:.2f}%")
 
+        # Compute volatility ratio on full historical df to prevent NaN at start of test slice
+        hist_returns_full = df['close'].pct_change().fillna(0.0)
+        vol_20d_full = hist_returns_full.rolling(20).std().fillna(0.02)
+        vol_250d_full = hist_returns_full.rolling(250).std().fillna(0.02)
+        vol_ratio_full = (vol_20d_full / (vol_250d_full + 1e-9)).values
+
+        # Align vol_ratio with df_test
+        start_idx = dt.time_steps + test_start_idx
+        end_idx = start_idx + len(X_test)
+        vol_ratio_test = vol_ratio_full[start_idx:end_idx]
+
+        vol_filter_thr = VOL_FILTER_THRESHOLD.get(ticker)
+        print(f"   🛡️ Volatility Filter: threshold={vol_filter_thr}")
+
         dates, equity, bh_equity, trades = run_simulation(
             df_test, df_test_extended,
             final_returns, ticker,
             commission_pct, slippage_pct,
             cur_threshold_buy, cur_threshold_sell,
+            vol_ratio=vol_ratio_test,
+            vol_filter_threshold=vol_filter_thr,
         )
 
         metrics                  = compute_metrics(equity, bh_equity, dates)

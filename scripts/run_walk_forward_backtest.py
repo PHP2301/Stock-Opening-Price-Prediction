@@ -1,11 +1,15 @@
-import os, sys, datetime, random, json
+import os, sys
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+os.environ['TF_DETERMINISTIC_OPS'] = '1'
+
+import datetime, random, json
 import numpy as np
 import pandas as pd
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import tensorflow as tf
-from tensorflow.keras.models import Model
+tf.config.experimental.enable_op_determinism()
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 
 SEED = 42
@@ -43,6 +47,12 @@ from src.backtest_engine import (
 def main():
     TICKERS       = ["VNM.VN", "GOOGL", "META"]
     threshold_buy = 0.0010
+
+    VOL_FILTER_THRESHOLD = {
+        'VNM.VN': None,
+        'GOOGL':  1.2,
+        'META':   1.2,
+    }
 
     args_cleaned = sys.argv
     if len(args_cleaned) > 1:
@@ -87,6 +97,13 @@ def main():
         df_test_extended_all = df.iloc[
             test_start_idx : test_start_idx + N_test_total + 1
         ].reset_index(drop=True)
+
+        # Compute volatility ratio on full historical df to prevent NaN at start of test slice
+        hist_returns_full = df['close'].pct_change().fillna(0.0)
+        vol_20d_full = hist_returns_full.rolling(20).std().fillna(0.02)
+        vol_250d_full = hist_returns_full.rolling(250).std().fillna(0.02)
+        vol_ratio_full = (vol_20d_full / (vol_250d_full + 1e-9)).values
+        vol_ratio_test_all = vol_ratio_full[test_start_idx : test_start_idx + N_test_total]
 
         # ── Đọc tham số tối ưu ─────────────────────────────────────────
         d_model, num_heads, key_dim, dropout_rate, learning_rate, batch_size = \
@@ -258,45 +275,71 @@ def main():
                 pass
         cur_threshold_sell = -cur_threshold_buy
 
-        print(f"\n📊 [SIMULATION] Chạy giả lập Hybrid trên dữ liệu 2023 → 2026 "
-              f"({len(df_test_all)} phiên)...")
-        dates, equity, bh_equity, trades = run_simulation(
+        # Chạy giả lập 1: KHÔNG LỌC (None)
+        print(f"\n📊 [SIMULATION 1] Chạy giả lập Hybrid KHÔNG LỌC (threshold=None)...")
+        dates_no_flt, equity_no_flt, bh_equity_no_flt, trades_no_flt = run_simulation(
             df_test_all, df_test_extended_all,
             final_returns_all, ticker,
             commission_pct, slippage_pct,
             cur_threshold_buy, cur_threshold_sell,
+            vol_ratio=vol_ratio_test_all,
+            vol_filter_threshold=None,
         )
+        metrics_no_flt = compute_metrics(equity_no_flt, bh_equity_no_flt, dates_no_flt)
+        win_rate_no_flt, total_trades_no_flt, profit_factor_no_flt = compute_trade_metrics(trades_no_flt, commission_pct)
+        wf_no_flt = run_walk_forward_evaluation(dates_no_flt, equity_no_flt, bh_equity_no_flt)
 
-        metrics = compute_metrics(equity, bh_equity, dates)
-        win_rate, total_trades, profit_factor = compute_trade_metrics(trades, commission_pct)
+        # Chạy giả lập 2: CÓ LỌC (Nếu threshold khác None)
+        vol_filter_thr = VOL_FILTER_THRESHOLD.get(ticker)
+        if vol_filter_thr is not None:
+            print(f"\n📊 [SIMULATION 2] Chạy giả lập Hybrid CÓ LỌC (threshold={vol_filter_thr})...")
+            dates_flt, equity_flt, bh_equity_flt, trades_flt = run_simulation(
+                df_test_all, df_test_extended_all,
+                final_returns_all, ticker,
+                commission_pct, slippage_pct,
+                cur_threshold_buy, cur_threshold_sell,
+                vol_ratio=vol_ratio_test_all,
+                vol_filter_threshold=vol_filter_thr,
+            )
+            metrics_flt = compute_metrics(equity_flt, bh_equity_flt, dates_flt)
+            win_rate_flt, total_trades_flt, profit_factor_flt = compute_trade_metrics(trades_flt, commission_pct)
+            wf_flt = run_walk_forward_evaluation(dates_flt, equity_flt, bh_equity_flt)
+        else:
+            dates_flt, equity_flt, bh_equity_flt = dates_no_flt, equity_no_flt, bh_equity_no_flt
+            metrics_flt, win_rate_flt, total_trades_flt, profit_factor_flt = metrics_no_flt, win_rate_no_flt, total_trades_no_flt, profit_factor_no_flt
+            wf_flt = wf_no_flt
 
+        # In kết quả so sánh tổng thể
         print(f"\n🏆 KẾT QUẢ WALK-FORWARD ROLLING BACKTEST HYBRID (2023–2026):")
-        print(f"   📈 Chiến lược : {metrics['strat_return']:+.2f}%")
-        print(f"   📦 Buy&Hold  : {metrics['bh_return']:+.2f}%")
-        print(f"   {ticker} Rolling Hybrid: Strategy {metrics['strat_return']:+.2f}% "
-              f"vs B&H {metrics['bh_return']:+.2f}%")
-        print(f"   📊 Sharpe    : {metrics['sharpe']:.2f}")
-        print(f"   📉 Max DD    : {metrics['mdd']:.2f}% (B&H: {metrics['bh_mdd']:.2f}%)")
-        print(f"   ⚖️  Calmar    : {metrics['calmar']:.2f}")
-        print(f"   🔔 Số lệnh   : {total_trades}")
-        print(f"   🥇 Win Rate  : {win_rate:.2f}%")
-        print(f"   💵 Profit F.  : {profit_factor:.2f}")
+        print(f"{'Chỉ số':<25} | {'KHÔNG LỌC (None)':<20} | {f'CÓ LỌC ({vol_filter_thr})':<20}")
+        print("-" * 72)
+        print(f"{'Tỷ suất Chiến lược':<25} | {metrics_no_flt['strat_return']:+18.2f}% | {metrics_flt['strat_return']:+18.2f}%")
+        print(f"{'Tỷ suất Buy & Hold':<25} | {metrics_no_flt['bh_return']:+18.2f}% | {metrics_flt['bh_return']:+18.2f}%")
+        print(f"{'Hệ số Sharpe':<25} | {metrics_no_flt['sharpe']:19.2f} | {metrics_flt['sharpe']:19.2f}")
+        print(f"{'Max Drawdown':<25} | {metrics_no_flt['mdd']:18.2f}% | {metrics_flt['mdd']:18.2f}%")
+        print(f"{'Số lệnh':<25} | {total_trades_no_flt:19d} | {total_trades_flt:19d}")
+        print(f"{'Tỷ lệ thắng':<25} | {win_rate_no_flt:18.2f}% | {win_rate_flt:18.2f}%")
+        print(f"{'Profit Factor':<25} | {profit_factor_no_flt:19.2f} | {profit_factor_flt:19.2f}")
 
-        wf = run_walk_forward_evaluation(dates, equity, bh_equity)
+        # In kết quả breakdown 3 Windows so sánh
         print(f"\n🎯 CHI TIẾT HIỆU SUẤT THEO PHÂN ĐOẠN WINDOWS (Out-Of-Sample):")
-        print("-" * 95)
-        print(f"{'Window':<40} | {'Strategy':<12} | {'B&H':<12} | {'Sharpe':<8} | {'MDD'}")
-        print("-" * 95)
-        for w in wf:
-            print(f"{w['window']:<40} | {w['strat_return']:+11.2f}% | "
-                  f"{w['bh_return']:+11.2f}% | {w['sharpe']:<8.2f} | {w['mdd']:.2f}%")
-        print("-" * 95)
+        print("-" * 110)
+        print(f"{'Window':<35} | {'No Flt Return':<14} | {'No Flt Sharpe':<13} | {'Flt Return':<12} | {'Flt Sharpe':<11} | {'B&H'}")
+        print("-" * 110)
+        for w_no, w_f in zip(wf_no_flt, wf_flt):
+            print(f"{w_no['window']:<35} | {w_no['strat_return']:+13.2f}% | {w_no['sharpe']:<13.2f} | "
+                  f"{w_f['strat_return']:+11.2f}% | {w_f['sharpe']:<11.2f} | {w_no['bh_return']:+11.2f}%")
+        print("-" * 110)
 
+        # Vẽ biểu đồ so sánh cả 2 đường cong tài sản
         currency_label = "VNĐ" if "VNM" in ticker.upper() else "USD"
         plt.figure(figsize=(12, 6))
-        plt.plot(dates, equity, label="Rolling Walk-Forward Hybrid Strategy",
-                 color='darkgreen', linewidth=2)
-        plt.plot(dates, bh_equity, label="Buy & Hold", color='grey',
+        plt.plot(dates_no_flt, equity_no_flt, label="Hybrid Strategy (No Filter)",
+                 color='blue', linewidth=1.5, alpha=0.8)
+        if vol_filter_thr is not None:
+            plt.plot(dates_flt, equity_flt, label=f"Hybrid Strategy (Vol Filter {vol_filter_thr})",
+                     color='darkgreen', linewidth=2)
+        plt.plot(dates_no_flt, bh_equity_no_flt, label="Buy & Hold", color='grey',
                  linestyle='--', alpha=0.8)
         plt.title(f"Rolling Walk-Forward Equity Curve (Hybrid) — {ticker}",
                   fontsize=13, fontweight='bold')
@@ -311,15 +354,15 @@ def main():
 
         # Lưu hiệu suất backtest vào JSON
         perf_path = os.path.join(config_dir, f'performance_metrics_{ticker}.json')
-        current_drawdown = (equity[-1] - max(equity)) / max(equity) if len(equity) > 0 else 0.0
+        current_drawdown = (equity_flt[-1] - max(equity_flt)) / max(equity_flt) if len(equity_flt) > 0 else 0.0
         perf_data = {
-            'overall_win_rate': win_rate / 100.0,
-            'total_trades': total_trades,
-            'profit_factor': profit_factor,
-            'strat_return': metrics['strat_return'],
-            'bh_return': metrics['bh_return'],
-            'sharpe': metrics['sharpe'],
-            'max_drawdown': metrics['mdd'],
+            'overall_win_rate': win_rate_flt / 100.0,
+            'total_trades': total_trades_flt,
+            'profit_factor': profit_factor_flt,
+            'strat_return': metrics_flt['strat_return'],
+            'bh_return': metrics_flt['bh_return'],
+            'sharpe': metrics_flt['sharpe'],
+            'max_drawdown': metrics_flt['mdd'],
             'current_drawdown': current_drawdown,
             'timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }

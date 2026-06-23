@@ -1,13 +1,20 @@
 import os
+# ── Determinism: phải đặt TRƯỚC khi import tensorflow ──────────────
+# Thiếu 2 dòng này → Optuna chọn params dựa trên kết quả non-deterministic,
+# params "tốt nhất" chỉ là may mắn random seed, không tái lập được.
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+os.environ['TF_DETERMINISTIC_OPS']  = '1'
+
 import sys
 import random
 import json
-import math
 import numpy as np
-import pandas as pd
 import tensorflow as tf
 from tensorflow.keras.callbacks import EarlyStopping
 import optuna
+
+# Kích hoạt strict determinism sau khi import TF
+tf.config.experimental.enable_op_determinism()
 
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
@@ -29,43 +36,38 @@ tf.random.set_seed(SEED)
 # - VNM.VN: thị trường VN noise cao → model nhỏ tránh overfit
 # - META:   đã overfit nặng với d_model=256 → cap tại 128
 # - GOOGL:  đang tốt với d_model=64 → cho phép rộng hơn 1 chút
+#
+# key_dim: thêm vào search space (trước đây hardcode=16, gây cấu hình
+# bất hợp lý như GOOGL num_heads=8 * key_dim=16 = 128 > d_model=64)
+# Constraint bắt buộc: num_heads * key_dim <= d_model
 # ════════════════════════════════════════════════════════════════════
 SEARCH_SPACE = {
-    'VNM.VN': {'d_model': [32, 64],      'num_heads': [2, 4]},
-    'GOOGL':  {'d_model': [64, 128],     'num_heads': [2, 4, 8]},
-    'META':   {'d_model': [64, 128],     'num_heads': [2, 4]},
+    'VNM.VN': {'d_model': [32, 64],   'num_heads': [2, 4]},
+    'GOOGL':  {'d_model': [64, 128],  'num_heads': [2, 4, 8]},
+    'META':   {'d_model': [64, 128],  'num_heads': [2, 4]},
 }
 
-# Số trial động: META/VNM cần tìm nhiều hơn vì space mới
 N_TRIALS = {
     'VNM.VN': 40,
     'GOOGL':  25,
     'META':   40,
 }
 
-# Epochs trong tuning tăng 20→40 để model lớn kịp hội tụ
-# Tránh val_loss ảo thấp ở epoch 1-5 khiến Optuna chọn nhầm model lớn
-TUNING_EPOCHS  = 40
+TUNING_EPOCHS   = 40
 TUNING_PATIENCE = 10
 
-# Biến global chứa data cho objective (Optuna yêu cầu single-arg callable)
 _X_train = _X_val = _y_train = _y_val = None
 _y_train_spread = _y_val_spread = None
 _current_ticker = None
 
 
 def objective(trial):
-    """
-    Hàm mục tiêu Optuna — dùng biến global _current_ticker để
-    load search space đúng per-ticker mà không cần thay đổi signature.
-    """
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
     tf.get_logger().setLevel('ERROR')
 
     ticker = _current_ticker
     space  = SEARCH_SPACE.get(ticker, SEARCH_SPACE['GOOGL'])
 
-    # ── Gợi ý siêu tham số từ search space riêng của ticker ──────
     d_model       = trial.suggest_categorical('d_model',      space['d_model'])
     num_heads     = trial.suggest_categorical('num_heads',    space['num_heads'])
     key_dim       = trial.suggest_categorical('key_dim',      [8, 16, 32])
@@ -73,9 +75,15 @@ def objective(trial):
     learning_rate = trial.suggest_float('learning_rate',      1e-5, 5e-4, log=True)
     batch_size    = trial.suggest_categorical('batch_size',   [32, 64])
 
-    # Kiểm tra tính hợp lệ: d_model phải chia hết cho num_heads
+    # ── Constraint 1: d_model phải chia hết cho num_heads ─────────
     if d_model % num_heads != 0:
-        # Pruning trial không hợp lệ thay vì raise error
+        raise optuna.exceptions.TrialPruned()
+
+    # ── Constraint 2 (MỚI): num_heads * key_dim <= d_model ────────
+    # Tránh cấu hình bất hợp lý: projection dim vượt model dim
+    # Ví dụ bị loại: num_heads=8 * key_dim=16 = 128 > d_model=64
+    # Ví dụ hợp lệ: num_heads=4 * key_dim=16 = 64 <= d_model=64
+    if num_heads * key_dim > d_model:
         raise optuna.exceptions.TrialPruned()
 
     model = build_transformer(
@@ -110,14 +118,7 @@ def objective(trial):
 
     val_loss = min(history.history['val_loss'])
 
-    # ════════════════════════════════════════════════════════════════
     # Complexity penalty: ưu tiên model nhỏ gọn nếu val_loss tương đương
-    # Công thức: penalty tỷ lệ thuận với d_model
-    # d_model=32  → penalty=0.00125
-    # d_model=64  → penalty=0.0025
-    # d_model=128 → penalty=0.005
-    # d_model=256 → penalty=0.01  (không dùng nhưng để reference)
-    # ════════════════════════════════════════════════════════════════
     complexity_penalty = (d_model / 256.0) * 0.01
 
     return val_loss + complexity_penalty
@@ -127,15 +128,15 @@ def run_tuning_for_ticker(t_ticker: str):
     global _X_train, _X_val, _y_train, _y_val
     global _y_train_spread, _y_val_spread, _current_ticker
 
-    print(f"\n{'='*55}")
+    print(f"\n{'='*60}")
     print(f"🚀 [OPTUNA] {t_ticker}")
     print(f"   Search space : {SEARCH_SPACE.get(t_ticker, SEARCH_SPACE['GOOGL'])}")
+    print(f"   key_dim      : [8, 16, 32] (constraint: num_heads*key_dim <= d_model)")
     print(f"   N trials     : {N_TRIALS.get(t_ticker, 25)}")
     print(f"   Tuning epochs: {TUNING_EPOCHS} (patience={TUNING_PATIENCE})")
-    print(f"{'='*55}")
+    print(f"   Determinism  : TF_ENABLE_ONEDNN_OPTS=0 + enable_op_determinism()")
+    print(f"{'='*60}")
 
-    # ── Tải & chuẩn bị dữ liệu ────────────────────────────────────
-    # Dùng 2022→nay để tuning nhanh (~1000 phiên, đủ đại diện)
     df = fetch_and_prepare_data(t_ticker, "2022-01-01", "2026-05-20")
 
     transformer = DataTransformer(time_steps=45)
@@ -147,7 +148,6 @@ def run_tuning_for_ticker(t_ticker: str):
             df, X_3D, y_3D, y_sp_3D, train_ratio=0.8
         )
 
-    # ── Val split với Purge Gap 45 phiên ──────────────────────────
     val_size  = int(len(X_tr_all) * 0.1)
     purge     = 45
     train_end = len(X_tr_all) - val_size - purge
@@ -157,23 +157,33 @@ def run_tuning_for_ticker(t_ticker: str):
         train_end = len(X_tr_all) - val_size
 
     _X_train        = X_tr_all[:train_end]
-    _y_train        = y_tr_all[:train_end].ravel()
-    _y_train_spread = (y_sp_tr_all[:train_end].ravel()
-                       if y_sp_tr_all is not None else np.zeros(train_end))
+    _y_train        = y_tr_all[:train_end]
+    _y_train_spread = (y_sp_tr_all[:train_end]
+                       if y_sp_tr_all is not None else np.zeros((train_end, 3)))
 
     _X_val          = X_tr_all[-val_size:]
-    _y_val          = y_tr_all[-val_size:].ravel()
-    _y_val_spread   = (y_sp_tr_all[-val_size:].ravel()
-                       if y_sp_tr_all is not None else np.zeros(val_size))
+    _y_val          = y_tr_all[-val_size:]
+    _y_val_spread   = (y_sp_tr_all[-val_size:]
+                       if y_sp_tr_all is not None else np.zeros((val_size, 3)))
 
     _current_ticker = t_ticker
 
     print(f"📊 Data: Train={_X_train.shape[0]}, Purge={purge}, Val={_X_val.shape[0]}")
 
-    # ── Chạy Optuna ───────────────────────────────────────────────
-    optuna.logging.set_verbosity(optuna.logging.WARNING)
+    # In các tổ hợp hợp lệ để tham khảo trước khi chạy
+    valid_combos = [
+        (d, h, k)
+        for d in SEARCH_SPACE.get(t_ticker, SEARCH_SPACE['GOOGL'])['d_model']
+        for h in SEARCH_SPACE.get(t_ticker, SEARCH_SPACE['GOOGL'])['num_heads']
+        for k in [8, 16, 32]
+        if d % h == 0 and h * k <= d
+    ]
+    print(f"   Tổ hợp (d_model, num_heads, key_dim) hợp lệ: {len(valid_combos)}")
+    for combo in valid_combos:
+        print(f"     d={combo[0]:3d}, h={combo[1]}, k={combo[2]}"
+              f"  → attn_dim={combo[1]*combo[2]}/{combo[0]}")
 
-    # Dùng TPESampler với seed cố định để tái lập kết quả
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
     sampler = optuna.samplers.TPESampler(seed=SEED)
     study   = optuna.create_study(
         direction='minimize',
@@ -186,22 +196,21 @@ def run_tuning_for_ticker(t_ticker: str):
         show_progress_bar=False,
     )
 
-    # ── Kết quả ───────────────────────────────────────────────────
-    best       = study.best_params
-    best_loss  = study.best_value
-    raw_loss   = best_loss - (best.get('d_model', 128) / 256.0) * 0.01
+    best      = study.best_params
+    best_loss = study.best_value
+    raw_loss  = best_loss - (best.get('d_model', 128) / 256.0) * 0.01
 
     print(f"\n🏆 {t_ticker} — Val Loss (với penalty) = {best_loss:.6f}")
     print(f"   Val Loss (thuần)                  = {raw_loss:.6f}")
     for k, v in best.items():
         print(f"   🔹 {k}: {v}")
+    print(f"   → attn_dim check: {best['num_heads']} * {best['key_dim']}"
+          f" = {best['num_heads'] * best['key_dim']} <= {best['d_model']} ✅")
 
-    # ── Lưu config ────────────────────────────────────────────────
     config_dir = os.path.join(ROOT_DIR, 'config')
     os.makedirs(config_dir, exist_ok=True)
     out_path   = os.path.join(config_dir, f'best_transformer_params_{t_ticker}.json')
 
-    # Đảm bảo key luôn là "num_heads" (không phải "heads")
     save_params = {
         'd_model':       best['d_model'],
         'num_heads':     best['num_heads'],
@@ -215,7 +224,6 @@ def run_tuning_for_ticker(t_ticker: str):
 
     print(f"💾 Config lưu tại: {out_path}")
 
-    # In top-3 trials để tham khảo
     print(f"\n📋 Top-3 trials tốt nhất:")
     sorted_trials = sorted(
         [t for t in study.trials if t.value is not None],
@@ -226,7 +234,8 @@ def run_tuning_for_ticker(t_ticker: str):
         print(f"   #{rank}: val_loss={t.value:.6f} "
               f"(thuần={t.value - penalty:.6f}) "
               f"d_model={t.params.get('d_model')} "
-              f"num_heads={t.params.get('num_heads')} "
+              f"h={t.params.get('num_heads')} "
+              f"k={t.params.get('key_dim')} "
               f"lr={t.params.get('learning_rate'):.2e}")
 
     return save_params
@@ -238,7 +247,7 @@ def main():
     if len(sys.argv) > 1:
         arg = sys.argv[1].upper()
         if arg == "ALL":
-            pass  # chạy tất cả
+            pass
         elif arg in [t.upper() for t in TICKERS]:
             TICKERS = [t for t in TICKERS if t.upper() == arg]
             print(f"🎯 Tuning cho: {TICKERS[0]}")
@@ -257,19 +266,18 @@ def main():
             import traceback
             traceback.print_exc()
 
-    # ── Tóm tắt toàn bộ ──────────────────────────────────────────
     if len(results) > 1:
-        print(f"\n{'='*55}")
+        print(f"\n{'='*60}")
         print(f"📊 TÓM TẮT TUNING")
-        print(f"{'='*55}")
+        print(f"{'='*60}")
         for ticker, p in results.items():
             print(f"  {ticker:10s}: d_model={p['d_model']:3d}, "
-                  f"num_heads={p['num_heads']}, "
+                  f"h={p['num_heads']}, k={p['key_dim']}, "
                   f"lr={p['learning_rate']:.2e}, "
                   f"dropout={p['dropout_rate']:.2f}, "
                   f"batch={p['batch_size']}")
 
-    print(f"\n✅ Tuning hoàn tất. Chạy training với params mới:")
+    print(f"\n✅ Tuning hoàn tất. Bước tiếp theo:")
     for ticker in results:
         print(f"   python scripts/run_training_transformer.py {ticker}")
 

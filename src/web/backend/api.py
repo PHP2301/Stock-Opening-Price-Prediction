@@ -283,7 +283,8 @@ def trigger_prediction(ticker: str, db: Session = Depends(get_db)):
         macro_rep = macro_agent.analyze(stock.ticker, vix_lag1, bond_yield_lag1, usdvnd_change, vnindex_return_lag1)
         risk_rep = risk_agent.analyze(stock.ticker, last_close, last_atr, mfi_14)
 
-        decision = orchestrator.run_debate(stock.ticker, last_close, tech_rep, sent_rep, macro_rep, risk_rep)
+        forecast_val = float(xgb_return_future[0]) if hasattr(xgb_return_future, "__len__") else float(xgb_return_future)
+        decision = orchestrator.run_debate(stock.ticker, last_close, tech_rep, sent_rep, macro_rep, risk_rep, forecast_val)
 
         # Cấu trúc hóa JSON lưu DB và trả về
         xgb_prices_list = [float(v) for v in xgb_vals]

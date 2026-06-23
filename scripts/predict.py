@@ -207,7 +207,8 @@ def run_prediction_for_ticker(ticker):
         macro_rep = macro_agent.analyze(ticker, vix_lag1, bond_yield_lag1, usdvnd_change, vnindex_return_lag1)
         risk_rep = risk_agent.analyze(ticker, last_close, last_atr, mfi_14)
 
-        decision = orchestrator.run_debate(ticker, last_close, tech_rep, sent_rep, macro_rep, risk_rep)
+        forecast_val = float(trans_return_future[0]) if hasattr(trans_return_future, "__len__") else float(trans_return_future)
+        decision = orchestrator.run_debate(ticker, last_close, tech_rep, sent_rep, macro_rep, risk_rep, forecast_val)
         
         print("==========================================================================")
         

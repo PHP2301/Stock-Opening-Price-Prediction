@@ -79,6 +79,8 @@ def run_simulation(
     ticker, commission_pct, slippage_pct,
     threshold_buy=0.0010, threshold_sell=-0.0010,
     resume_threshold=0.10, cooldown_period=20,
+    vol_ratio=None,
+    vol_filter_threshold=None,
 ):
     """
     Chạy mô phỏng giao dịch trên dữ liệu test.
@@ -136,6 +138,14 @@ def run_simulation(
     hist_returns = df_test['close'].pct_change().fillna(0.0).values[:n]
     rolling_std  = pd.Series(hist_returns).rolling(20, min_periods=1).std().fillna(0.02).values
 
+    # Tính toán hoặc sử dụng vol_ratio truyền từ bên ngoài
+    if vol_ratio is not None:
+        vol_ratio_arr = np.asarray(vol_ratio)[:n]
+    else:
+        # Fallback tính toán trên df_test
+        vol_250d = pd.Series(hist_returns).rolling(250, min_periods=1).std().fillna(0.02).values
+        vol_ratio_arr = rolling_std / (vol_250d + 1e-9)
+
     initial_capital = 100_000_000.0
     cash     = initial_capital
     shares   = 0.0
@@ -181,6 +191,10 @@ def run_simulation(
         is_momentum = (r_3 > r_2) and (r_2 > r_1) and (r_1 > threshold_buy)
         is_mean_rev = (r_1 < -1.5 * sigma)
         is_buy = is_momentum or is_mean_rev
+
+        # Volatility Regime Filter
+        if vol_filter_threshold is not None and vol_ratio_arr[i] > vol_filter_threshold:
+            is_buy = False
 
         # Regime Filter
         if has_regime and df_test[regime_col].values[i] == 0:

@@ -1,7 +1,8 @@
 {
-    "d_model": 64,
-    "num_heads": 2,
-    "dropout_rate": 0.1355433597580378,
-    "learning_rate": 0.0003191308995126439,
-    "batch_size": 64
+  "d_model": 64,
+  "num_heads": 2,
+  "key_dim": 16,
+  "dropout_rate": 0.1355433597580378,
+  "learning_rate": 0.0003191308995126439,
+  "batch_size": 64
 }

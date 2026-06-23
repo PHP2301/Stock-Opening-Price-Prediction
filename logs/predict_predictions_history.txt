@@ -1471,3 +1471,56 @@ Khuyến nghị cuối cùng: HOLD (Độ tự tin: 50.0%)
 Lập luận: Tín hiệu thị trường đang trái chiều và chưa rõ ràng; khuyến nghị tiếp tục đứng ngoài quan sát để bảo toàn dòng tiền.
 --------------------------------------------------
 
+=== BẢN GHI DỰ BÁO 3 NGÀY & MULTI-AGENT REPORT (2026-06-22 22:01:08) ===
+Mã chứng khoán: VNM.VN
+Giá đóng cửa gần nhất (2026-06-22): 58.600,00 VNĐ
+Rủi ro biến động: Thấp (An toàn - Thị trường ổn định) 🟢 (Tỷ lệ: 1.32%)
+Dự báo Hybrid XGBoost (3 ngày):
+  ➔ T+1 (2026-06-23): 58.561,17 VNĐ (📉 GIẢM (-0.07%)) | Khoảng an toàn: [57.400,33 VNĐ - 59.722,02 VNĐ]
+  ➔ T+2 (2026-06-24): 58.724,31 VNĐ (📈 TĂNG (+0.21%)) | Khoảng an toàn: [57.563,46 VNĐ - 59.885,15 VNĐ]
+  ➔ T+3 (2026-06-25): 58.405,63 VNĐ (📉 GIẢM (-0.33%)) | Khoảng an toàn: [57.244,79 VNĐ - 59.566,48 VNĐ]
+
+🤖 BÁO CÁO MULTI-AGENT:
+Khuyến nghị cuối cùng: HOLD (Độ tự tin: 50.0%)
+  * SL tham chiếu: 57.052,21 VNĐ (-2.64%)
+  * TP tham chiếu: 61.695,58 VNĐ (+5.28%)
+  * Phân bổ Kelly: 0.00%
+Lập luận: Không đủ số lượng phiếu đồng thuận (tối thiểu 2 phiếu cùng chiều) từ các chuyên gia để mở vị thế. Mô hình AI dự báo giá có thể giảm khoảng 0.1% trong giai đoạn tới.
+--------------------------------------------------
+
+=== BẢN GHI DỰ BÁO 3 NGÀY & MULTI-AGENT REPORT (2026-06-22 22:04:13) ===
+Mã chứng khoán: GOOGL
+Giá đóng cửa gần nhất (2026-06-22): $344.55 USD
+Rủi ro biến động: Cao (Nguy hiểm - Biến động cực mạnh) 🔴 (Tỷ lệ: 3.39%)
+Tỷ giá USD/VND quy đổi: 1 USD = 26.122,00 VNĐ
+Dự báo Hybrid XGBoost (3 ngày):
+  ➔ T+1 (2026-06-23): $343.72 USD (📉 GIẢM (-0.24%)) | Khoảng an toàn: [$326.20 USD - $361.24 USD]
+  ➔ T+2 (2026-06-24): $345.63 USD (📈 TĂNG (+0.32%)) | Khoảng an toàn: [$328.11 USD - $363.15 USD]
+  ➔ T+3 (2026-06-25): $345.82 USD (📈 TĂNG (+0.37%)) | Khoảng an toàn: [$328.30 USD - $363.35 USD]
+
+🤖 BÁO CÁO MULTI-AGENT:
+Khuyến nghị cuối cùng: HOLD (Độ tự tin: 50.0%)
+  * SL tham chiếu: $321.18 USD (-6.78%)
+  * TP tham chiếu: $391.27 USD (+13.56%)
+  * Phân bổ Kelly: 0.00%
+Lập luận: Không đủ số lượng phiếu đồng thuận (tối thiểu 2 phiếu cùng chiều) từ các chuyên gia để mở vị thế. Mô hình AI dự báo giá có thể giảm khoảng 0.2% trong giai đoạn tới.
+--------------------------------------------------
+
+=== BẢN GHI DỰ BÁO 3 NGÀY & MULTI-AGENT REPORT (2026-06-22 22:06:57) ===
+Mã chứng khoán: META
+Giá đóng cửa gần nhất (2026-06-22): $562.25 USD
+Rủi ro biến động: Cao (Nguy hiểm - Biến động cực mạnh) 🔴 (Tỷ lệ: 3.52%)
+Tỷ giá USD/VND quy đổi: 1 USD = 26.122,00 VNĐ
+Dự báo Hybrid XGBoost (3 ngày):
+  ➔ T+1 (2026-06-23): $561.49 USD (📉 GIẢM (-0.14%)) | Khoảng an toàn: [$531.78 USD - $591.19 USD]
+  ➔ T+2 (2026-06-24): $561.84 USD (📉 GIẢM (-0.07%)) | Khoảng an toàn: [$532.13 USD - $591.54 USD]
+  ➔ T+3 (2026-06-25): $547.65 USD (📉 GIẢM (-2.60%)) | Khoảng an toàn: [$517.94 USD - $577.35 USD]
+
+🤖 BÁO CÁO MULTI-AGENT:
+Khuyến nghị cuối cùng: SELL (Độ tự tin: 65.3%)
+  * SL tham chiếu: $522.64 USD (-7.04%)
+  * TP tham chiếu: $641.46 USD (+14.09%)
+  * Phân bổ Kelly: 0.00%
+Lập luận: Tín hiệu BÁN đồng thuận từ các chuyên gia (Bear: 2, Bull: 1). Mô hình AI dự báo giá có thể giảm khoảng 0.1% trong giai đoạn tới.
+--------------------------------------------------
+
