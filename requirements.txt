@@ -11,9 +11,7 @@ deep-translator==1.9.1
 nltk==3.9.4
 transformers==5.9.0
 torch==2.12.0
-sqlalchemy==2.0.50
-fastapi==0.136.1
-uvicorn==0.47.0
+
 xgboost==3.2.0
 optuna==4.8.0
 vnstock
