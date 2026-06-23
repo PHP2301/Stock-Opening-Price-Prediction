@@ -19,8 +19,6 @@ COPY . .
 
 # Thiết lập biến môi trường
 ENV PYTHONUNBUFFERED=1
-ENV HOST=0.0.0.0
-ENV PORT=8000
 
 # Lệnh khởi chạy mặc định (nếu không dùng docker-compose)
 CMD ["python", "scripts/run_training_transformer.py"]
