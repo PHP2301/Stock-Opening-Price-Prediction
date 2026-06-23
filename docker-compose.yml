@@ -1,21 +1,34 @@
 version: '3.8'
 
 services:
+  # Dịch vụ 1: Chuyên Huấn luyện & Backtest mô hình (chạy xong tự tắt)
+  trainer:
+    build: .
+    container_name: stock-trainer
+    environment:
+      - TICKER=${TICKER:-} # Đặt "META", "GOOGL", "VNM.VN" để train riêng, hoặc để trống để train hết
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+    volumes:
+      - ./models:/app/models
+      - ./reports:/app/reports
+      - ./config:/app/config
+      - ./logs:/app/logs
+
+  # Dịch vụ 2: Chạy trang web giao diện & API (chạy liên tục)
   web-api:
     build: .
     container_name: stock-prediction-api
-    restart: always
+    command: ["python", "src/web_runner/run_web.py"]
     ports:
       - "8000:8000"
     environment:
       - HOST=0.0.0.0
       - PORT=8000
+      - RELOAD=true
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
     volumes:
       - ./models:/app/models
       - ./data:/app/data
       - ./logs:/app/logs
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/stocks"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      - ./config:/app/config
+
