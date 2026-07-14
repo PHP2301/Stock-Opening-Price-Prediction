@@ -203,9 +203,13 @@ def fetch_latest_news(ticker):
                         match = re.search(r'\d{3}(\d{2})(\d{2})(\d{2})\d+\.chn', href)
                         if match:
                             date_str = f"20{match.group(1)}-{match.group(2)}-{match.group(3)}"
-                            vi_titles.append(title_vi)
-                            dates_vn.append(date_str)
-                            seen_urls.add(href)
+                            try:
+                                datetime.strptime(date_str, '%Y-%m-%d')
+                                vi_titles.append(title_vi)
+                                dates_vn.append(date_str)
+                                seen_urls.add(href)
+                            except ValueError:
+                                pass
                 except Exception as e:
                     print(f"  [NEWS] CafeF search lỗi cho '{kw}': {e}")
                 import time
@@ -231,9 +235,13 @@ def fetch_latest_news(ticker):
                                       'Jul':'07','Aug':'08','Sep':'09','Oct':'10','Nov':'11','Dec':'12'}
                             month = months.get(parts[2][:3], '01')
                             date_str = f"{parts[3]}-{month}-{parts[1].zfill(2)}"
-                            vi_titles.append(title_vi)
-                            dates_vn.append(date_str)
-                            if href: seen_urls.add(href)
+                            try:
+                                datetime.strptime(date_str, '%Y-%m-%d')
+                                vi_titles.append(title_vi)
+                                dates_vn.append(date_str)
+                                if href: seen_urls.add(href)
+                            except ValueError:
+                                pass
                 except Exception:
                     pass
 
@@ -320,7 +328,7 @@ if __name__ == "__main__":
         sys.stdout.reconfigure(encoding='utf-8')
         
     print("=== CHẠY THỬ NGHIỆM TIN TỨC & PHÂN TÍCH CẢM XÚC ===")
-    tickers = ["VNM.VN", "GOOGL", "META"]
+    tickers = ["META"]
     for ticker in tickers:
         print(f"\n📰 Đang lấy tin tức cho: {ticker}")
         try:

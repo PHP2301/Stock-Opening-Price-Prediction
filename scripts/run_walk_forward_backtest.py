@@ -33,6 +33,19 @@ from src.backtest_engine import (
     run_simulation, run_walk_forward_evaluation,
 )
 
+def compute_r2(y_true, y_pred):
+    """Tính R2 score bỏ qua NaNs."""
+    mask = ~np.isnan(y_true) & ~np.isnan(y_pred)
+    yt = y_true[mask]
+    yp = y_pred[mask]
+    if len(yt) < 2:
+        return 0.0
+    ss_res = np.sum((yt - yp) ** 2)
+    ss_tot = np.sum((yt - np.mean(yt)) ** 2)
+    if ss_tot < 1e-9:
+        return 0.0
+    return float(1.0 - (ss_res / ss_tot))
+
 # run_walk_forward_backtest.py — Expanding window walk-forward, Hybrid mỗi fold.
 #
 # QUAN TRỌNG (đã xác nhận với user): ở mỗi fold (mỗi năm kiểm thử), sau khi
@@ -45,13 +58,13 @@ from src.backtest_engine import (
 
 
 def main():
-    TICKERS       = ["VNM.VN", "GOOGL", "META"]
+    TICKERS       = ["META"]
     threshold_buy = 0.0010
 
     VOL_FILTER_THRESHOLD = {
         'VNM.VN': None,
         'GOOGL':  1.2,
-        'META':   1.2,
+        'META':   None,
     }
 
     args_cleaned = sys.argv
@@ -66,13 +79,20 @@ def main():
             threshold_buy = float(args_cleaned[2])
         except ValueError:
             pass
+    hold_days = 5
+    if len(args_cleaned) > 3:
+        try:
+            hold_days = int(args_cleaned[3])
+        except ValueError:
+            pass
 
     figures_dir = os.path.join(ROOT_DIR, 'reports', 'figures')
     config_dir  = os.path.join(ROOT_DIR, 'config')
     os.makedirs(figures_dir, exist_ok=True)
     os.makedirs(config_dir, exist_ok=True)
 
-    test_years = [2023, 2024, 2025, 2026]
+    # META lên sàn giữa năm 2012, Train 4 năm (2012-2015), test năm đầu là 2016
+    test_years = list(range(2016, datetime.datetime.now().year + 1))
 
     for ticker in TICKERS:
         print(f"\n{'='*80}")
@@ -82,12 +102,12 @@ def main():
         commission_pct = 0.0020 if "VNM" in ticker.upper() else 0.0010
         slippage_pct   = 0.0010 if "VNM" in ticker.upper() else 0.0005
 
-        df = fetch_and_prepare_data(ticker, start_date="2012-01-01", end_date="2026-05-20")
+        df = fetch_and_prepare_data(ticker, start_date="2012-01-01", end_date=datetime.datetime.now().strftime("%Y-%m-%d"))
         df['date'] = pd.to_datetime(df['date'])
 
-        test_start_date = pd.to_datetime("2023-01-01")
+        test_start_date = pd.to_datetime(f"{test_years[0]}-01-01")
         if df['date'].max() < test_start_date:
-            print(f"❌ Dữ liệu mã {ticker} quá ngắn, không có dữ liệu sau 2023-01-01!")
+            print(f"❌ Dữ liệu mã {ticker} quá ngắn, không có dữ liệu sau {test_start_date.strftime('%Y-%m-%d')}!")
             continue
 
         test_start_idx = df[df['date'] >= test_start_date].index[0]
@@ -125,20 +145,23 @@ def main():
                 print(f"⚠️ Lỗi đọc file config: {e}")
 
         final_pred_accum = []   # Hybrid (XGBoost) final returns mỗi fold
+        actual_target_accum = [] # Actual target returns mỗi fold để tính R2
         previous_weights = None
 
         for year in test_years:
+            train_start = pd.to_datetime(f"{year-4}-01-01")
             year_start = pd.to_datetime(f"{year}-01-01")
             year_end   = pd.to_datetime(f"{year}-12-31")
 
-            train_df = df[df['date'] < year_start].copy()
+            # Rolling Window: Lấy đúng 4 năm trước năm test để Train
+            train_df = df[(df['date'] >= train_start) & (df['date'] < year_start)].copy()
             test_df  = df[(df['date'] >= year_start) & (df['date'] <= year_end)].copy()
 
             if test_df.empty:
                 print(f"   [INFO] Năm {year}: Không có dữ liệu kiểm thử, bỏ qua.")
                 continue
 
-            print(f"\n▶️ [WINDOW {year}] — Huấn luyện: 2012 → {year-1} "
+            print(f"\n▶️ [WINDOW {year}] — Huấn luyện: {year-4} → {year-1} "
                   f"({len(train_df)} phiên) | Kiểm thử: {year} ({len(test_df)} phiên)...")
 
             # Cô lập scaling hoàn toàn cho fold này
@@ -255,6 +278,10 @@ def main():
             final_pred_ret   = dt.target_scaler.inverse_transform(xgb_pred_scaled)
             final_pred_accum.append(final_pred_ret)
 
+            # Lưu actual targets để tính R2
+            y_test_raw = test_df[dt.target_cols].values
+            actual_target_accum.append(y_test_raw)
+
             print(f"      ✅ Hoàn thành dự báo Hybrid out-of-sample {year}!")
 
         if not final_pred_accum:
@@ -263,11 +290,12 @@ def main():
 
         # ── BƯỚC 4: Gộp kết quả và chạy Trading Simulation ────────────────
         final_returns_all = np.concatenate(final_pred_accum, axis=0)
+        actual_returns_all = np.concatenate(actual_target_accum, axis=0)
 
         assert len(final_returns_all) == len(df_test_all), \
             f"Lệch độ dài: dự báo={len(final_returns_all)}, thực tế={len(df_test_all)}"
 
-        cur_threshold_buy = 0.0050 if "VNM" in ticker.upper() else 0.0010
+        cur_threshold_buy = 0.0050 if "VNM" in ticker.upper() else 0.0050
         if len(args_cleaned) > 2:
             try:
                 cur_threshold_buy = float(args_cleaned[2])
@@ -284,6 +312,7 @@ def main():
             cur_threshold_buy, cur_threshold_sell,
             vol_ratio=vol_ratio_test_all,
             vol_filter_threshold=None,
+            hold_days=hold_days,
         )
         metrics_no_flt = compute_metrics(equity_no_flt, bh_equity_no_flt, dates_no_flt)
         win_rate_no_flt, total_trades_no_flt, profit_factor_no_flt = compute_trade_metrics(trades_no_flt, commission_pct)
@@ -300,6 +329,7 @@ def main():
                 cur_threshold_buy, cur_threshold_sell,
                 vol_ratio=vol_ratio_test_all,
                 vol_filter_threshold=vol_filter_thr,
+                hold_days=hold_days,
             )
             metrics_flt = compute_metrics(equity_flt, bh_equity_flt, dates_flt)
             win_rate_flt, total_trades_flt, profit_factor_flt = compute_trade_metrics(trades_flt, commission_pct)
@@ -310,6 +340,7 @@ def main():
             wf_flt = wf_no_flt
 
         # In kết quả so sánh tổng thể
+        r2_t1 = compute_r2(actual_returns_all[:, 0], final_returns_all[:, 0])
         print(f"\n🏆 KẾT QUẢ WALK-FORWARD ROLLING BACKTEST HYBRID (2023–2026):")
         print(f"{'Chỉ số':<25} | {'KHÔNG LỌC (None)':<20} | {f'CÓ LỌC ({vol_filter_thr})':<20}")
         print("-" * 72)
@@ -317,19 +348,27 @@ def main():
         print(f"{'Tỷ suất Buy & Hold':<25} | {metrics_no_flt['bh_return']:+18.2f}% | {metrics_flt['bh_return']:+18.2f}%")
         print(f"{'Hệ số Sharpe':<25} | {metrics_no_flt['sharpe']:19.2f} | {metrics_flt['sharpe']:19.2f}")
         print(f"{'Max Drawdown':<25} | {metrics_no_flt['mdd']:18.2f}% | {metrics_flt['mdd']:18.2f}%")
+        print(f"{'Model R^2 Score (T+1)':<25} | {r2_t1:19.4f} | {r2_t1:19.4f}")
         print(f"{'Số lệnh':<25} | {total_trades_no_flt:19d} | {total_trades_flt:19d}")
         print(f"{'Tỷ lệ thắng':<25} | {win_rate_no_flt:18.2f}% | {win_rate_flt:18.2f}%")
         print(f"{'Profit Factor':<25} | {profit_factor_no_flt:19.2f} | {profit_factor_flt:19.2f}")
 
         # In kết quả breakdown 3 Windows so sánh
         print(f"\n🎯 CHI TIẾT HIỆU SUẤT THEO PHÂN ĐOẠN WINDOWS (Out-Of-Sample):")
-        print("-" * 110)
-        print(f"{'Window':<35} | {'No Flt Return':<14} | {'No Flt Sharpe':<13} | {'Flt Return':<12} | {'Flt Sharpe':<11} | {'B&H'}")
-        print("-" * 110)
-        for w_no, w_f in zip(wf_no_flt, wf_flt):
+        print("-" * 122)
+        print(f"{'Window':<35} | {'No Flt Return':<14} | {'No Flt Sharpe':<13} | {'Flt Return':<12} | {'Flt Sharpe':<11} | {'Model R^2':<10} | {'B&H'}")
+        print("-" * 122)
+        n_dates = len(dates_no_flt)
+        w_len = n_dates // 3
+        for i, (w_no, w_f) in enumerate(zip(wf_no_flt, wf_flt)):
+            s = i * w_len
+            e = n_dates if i == 2 else (i + 1) * w_len
+            y_true_slice = actual_returns_all[s:e, 0]
+            y_pred_slice = final_returns_all[s:e, 0]
+            r2_slice = compute_r2(y_true_slice, y_pred_slice)
             print(f"{w_no['window']:<35} | {w_no['strat_return']:+13.2f}% | {w_no['sharpe']:<13.2f} | "
-                  f"{w_f['strat_return']:+11.2f}% | {w_f['sharpe']:<11.2f} | {w_no['bh_return']:+11.2f}%")
-        print("-" * 110)
+                  f"{w_f['strat_return']:+11.2f}% | {w_f['sharpe']:<11.2f} | {r2_slice:<10.4f} | {w_no['bh_return']:+11.2f}%")
+        print("-" * 122)
 
         # Vẽ biểu đồ so sánh cả 2 đường cong tài sản
         currency_label = "VNĐ" if "VNM" in ticker.upper() else "USD"
@@ -363,6 +402,7 @@ def main():
             'bh_return': metrics_flt['bh_return'],
             'sharpe': metrics_flt['sharpe'],
             'max_drawdown': metrics_flt['mdd'],
+            'r2_score_t1': r2_t1,
             'current_drawdown': current_drawdown,
             'timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }

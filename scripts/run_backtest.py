@@ -47,7 +47,7 @@ VOL_FILTER_THRESHOLD = {
 
 def main():
     args_cleaned  = sys.argv
-    TICKERS       = ["VNM.VN", "GOOGL", "META"]
+    TICKERS       = ["META"]
     cli_threshold = None
 
     if len(args_cleaned) > 1:

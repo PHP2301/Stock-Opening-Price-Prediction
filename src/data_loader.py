@@ -91,65 +91,9 @@ def get_vcb_usd_rates():
     return None
 
 
-def get_realtime_usd_vnd_rate():
-    """
-    Lấy tỷ giá USD/VND realtime.
-    Ưu tiên 1: Tỷ giá Mua chuyển khoản của Vietcombank (sát thực tế nhất với đầu tư tài chính).
-    Ưu tiên 2: Yahoo Finance (USDVND=X).
-    Ưu tiên 3: Open ER API.
-    """
-    # 1. Thử lấy từ Vietcombank (lấy tỷ giá Mua Chuyển Khoản)
-    vcb_rates = get_vcb_usd_rates()
-    if vcb_rates and 15000.0 <= vcb_rates['buy_transfer'] <= 28000.0:
-        return vcb_rates['buy_transfer']
-
-    # 2. Fallback: Yahoo Finance
-    try:
-        ticker = yf.Ticker("USDVND=X")
-        df = ticker.history(period="5d")
-        if not df.empty:
-            rate = float(df['Close'].dropna().iloc[-1])
-            if rate < 1000.0:
-                rate *= 1000.0
-            if 15000.0 <= rate <= 28000.0:
-                return rate
-    except Exception:
-        pass
-
-    # 3. Fallback: Open ER API
-    try:
-        import urllib.request, json
-        url = "https://open.er-api.com/v6/latest/USD"
-        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=5) as response:
-            data = json.loads(response.read().decode())
-            rate = float(data['rates']['VND'])
-            if 15000.0 <= rate <= 28000.0:
-                return rate
-    except Exception:
-        pass
-
-    return 25400.0
-
-
-def _clean_usdvnd(df_rate, fallback_rate):
-    """Chuẩn hóa và lọc tỷ giá USD/VND — dùng chung cho mọi nơi."""
-    df_rate['rate_close'] = df_rate['rate_close'].apply(
-        lambda x: x * 1000.0 if x < 1000.0 else x
-    )
-    df_rate.loc[
-        (df_rate['rate_close'] < 15000.0) | (df_rate['rate_close'] > 28000.0),
-        'rate_close'
-    ] = np.nan
-    df_rate['rate_close'] = df_rate['rate_close'].ffill().bfill().fillna(fallback_rate)
-    return df_rate
-
-
 def calculate_dividend_features(df, df_divs):
     # Khởi tạo mặc định
     df['dividend_flag'] = 0.0
-    df['days_to_dividend'] = 60.0
-    df['days_after_dividend'] = 60.0
 
     if df_divs is None or df_divs.empty:
         return df
@@ -157,39 +101,13 @@ def calculate_dividend_features(df, df_divs):
     div_dates = pd.to_datetime(df_divs['date']).dt.normalize().tolist()
     trading_dates = pd.to_datetime(df['date']).dt.normalize().tolist()
 
-    div_trading_indices = []
     for div_date in div_dates:
         future_trades = [i for i, d in enumerate(trading_dates) if d >= div_date]
         if future_trades:
             idx = future_trades[0]
-            div_trading_indices.append(idx)
             if abs((trading_dates[idx] - div_date).days) <= 3:
                 df.loc[idx, 'dividend_flag'] = 1.0
 
-    if not div_trading_indices:
-        return df
-
-    div_trading_indices = sorted(list(set(div_trading_indices)))
-
-    days_to = []
-    days_after = []
-
-    n_days = len(trading_dates)
-    for i in range(n_days):
-        next_div_indices = [j for j in div_trading_indices if j >= i]
-        if next_div_indices:
-            days_to.append(float(min(next_div_indices[0] - i, 60)))
-        else:
-            days_to.append(60.0)
-
-        prev_div_indices = [j for j in div_trading_indices if j <= i]
-        if prev_div_indices:
-            days_after.append(float(min(i - prev_div_indices[-1], 60)))
-        else:
-            days_after.append(60.0)
-
-    df['days_to_dividend'] = days_to
-    df['days_after_dividend'] = days_after
     return df
 
 
@@ -218,26 +136,6 @@ def fetch_and_prepare_data(
     base_ticker   = ticker.split('.')[0]
     school_data_path = os.path.join(data_dir, "raw", f"{base_ticker}_prices.csv")
     price_cols    = ['open', 'high', 'low', 'close']
-    fallback_rate = get_realtime_usd_vnd_rate()
-
-    # ── Tỷ giá USD/VND ────────────────────────────────────────────────
-    df_usd_vnd = None
-    try:
-        print(f"Đang tải tỷ giá USD/VND (USDVND=X) từ {start_date} đến {end_date}...")
-        raw_rate = yf.download("USDVND=X", start=start_date, end=end_date, progress=False, timeout=10)
-        if not raw_rate.empty:
-            df_usd_vnd = raw_rate.reset_index()
-            if isinstance(df_usd_vnd.columns, pd.MultiIndex):
-                df_usd_vnd.columns = [str(c[0]).lower() for c in df_usd_vnd.columns]
-            else:
-                df_usd_vnd.columns = [str(c).lower() for c in df_usd_vnd.columns]
-            df_usd_vnd['date'] = pd.to_datetime(df_usd_vnd['date'])
-            df_usd_vnd = (df_usd_vnd[['date', 'close']]
-                          .rename(columns={'close': 'rate_close'})
-                          .sort_values('date').reset_index(drop=True))
-            df_usd_vnd = _clean_usdvnd(df_usd_vnd, fallback_rate)
-    except Exception as e:
-        print(f"  [WARNING] Không tải được USDVND=X: {e}")
 
     # ── Yahoo Finance ──────────────────────────────────────────────────
     df_yf = None
@@ -250,7 +148,7 @@ def fetch_and_prepare_data(
                 df_yf.columns = [str(c[0]).lower() for c in df_yf.columns]
             else:
                 df_yf.columns = [str(c).lower() for c in df_yf.columns]
-            df_yf['date'] = pd.to_datetime(df_yf['date'])
+            df_yf['date'] = pd.to_datetime(df_yf['date']).dt.tz_localize(None).dt.normalize()
             df_yf = df_yf.sort_values('date').reset_index(drop=True)
             if "VNM" not in ticker.upper():
                 pass
@@ -269,7 +167,7 @@ def fetch_and_prepare_data(
         df_school.columns = [str(c).lower() for c in df_school.columns]
         if 'time' in df_school.columns:
             df_school = df_school.rename(columns={'time': 'date'})
-        df_school['date'] = pd.to_datetime(df_school['date'])
+        df_school['date'] = pd.to_datetime(df_school['date']).dt.tz_localize(None).dt.normalize()
         df_school = df_school.sort_values('date').reset_index(drop=True)
 
         # DNSE bổ sung cho VNM trước 2019
@@ -287,7 +185,7 @@ def fetch_and_prepare_data(
                     dnse_raw = json.loads(res.read())
                 if 't' in dnse_raw and dnse_raw['t'] is not None and len(dnse_raw['t']) > 0:
                     df_dnse = pd.DataFrame({
-                        'date':   pd.to_datetime(dnse_raw['t'], unit='s'),
+                        'date':   pd.to_datetime(dnse_raw['t'], unit='s').tz_localize(None).normalize(),
                         'open':   dnse_raw['o'], 'high': dnse_raw['h'],
                         'low':    dnse_raw['l'], 'close': dnse_raw['c'],
                         'volume': dnse_raw['v'],
@@ -330,7 +228,9 @@ def fetch_and_prepare_data(
 
     def _load_yf_series(sym, col_rename, pct_change=False):
         try:
-            raw = yf.download(sym, start=start_date, end=end_date, progress=False, timeout=10)
+            actual_start = df['date'].min().strftime('%Y-%m-%d')
+            actual_end = max(pd.to_datetime(end_date), df['date'].max()).strftime('%Y-%m-%d')
+            raw = yf.download(sym, start=actual_start, end=actual_end, progress=False, timeout=10)
             if raw.empty:
                 return pd.DataFrame(columns=['date', col_rename])
             tmp = raw.reset_index()
@@ -338,7 +238,7 @@ def fetch_and_prepare_data(
                 tmp.columns = [str(c[0]).lower() for c in tmp.columns]
             else:
                 tmp.columns = [str(c).lower() for c in tmp.columns]
-            tmp['date'] = pd.to_datetime(tmp['date'])
+            tmp['date'] = pd.to_datetime(tmp['date']).dt.tz_localize(None).dt.normalize()
             if pct_change:
                 tmp[col_rename] = tmp['close'].pct_change()
             else:
@@ -348,8 +248,7 @@ def fetch_and_prepare_data(
             print(f"  [WARNING] Không tải được {sym}: {e}")
             return pd.DataFrame(columns=['date', col_rename])
 
-    is_vn = ".VN" in ticker.upper()
-    index_ticker = "VNM" if is_vn else "^IXIC"
+    index_ticker = "^IXIC"
 
     # FIX 4: Tải market_return MỘT LẦN. Với VN, ticker "VNM" (không .VN)
     # = VanEck Vietnam ETF trên NYSE — đồng thời dùng làm benchmark
@@ -383,48 +282,14 @@ def fetch_and_prepare_data(
     df['sp500_above_ma200'] = (df['sp500'] > sp500_ma200).astype(float)
     df['nasdaq_12m_return'] = (df['nasdaq'] / df['nasdaq'].shift(252) - 1).fillna(0.0)
 
-    # FIX 4: Chỉ báo Regime cho thị trường Việt Nam — TÁI SỬ DỤNG
-    # df_market_raw (ticker "VNM" = VanEck Vietnam ETF) đã tải ở trên,
-    # không gọi lại API. Cần raw close (không pct_change) cho MA200,
-    # nên tải lại CHỈ close (không pct_change) qua 1 lần gọi riêng,
-    # nhẹ hơn việc tải y_xs+pct_change hai lần.
-    if is_vn:
-        df_vnm_etf_close = _load_yf_series("VNM", 'vnm_etf', pct_change=False)
-        if not df_vnm_etf_close.empty:
-            df = pd.merge(df, df_vnm_etf_close, on='date', how='left')
-            df['vnm_etf'] = df['vnm_etf'].ffill().bfill().fillna(df['vnm_etf'].median())
-            vnm_ma200 = df['vnm_etf'].rolling(200, min_periods=1).mean()
-            df['vnm_etf_above_ma200'] = (df['vnm_etf'] > vnm_ma200).astype(float)
-        else:
-            df['vnm_etf_above_ma200'] = 1.0  # fallback: không chặn mua
-    else:
-        df['vnm_etf_above_ma200'] = 1.0
 
-    # USD/VND change
-    if df_usd_vnd is not None:
-        df_usd_vnd_ch = df_usd_vnd.copy()
-        df_usd_vnd_ch['usdvnd_change'] = df_usd_vnd_ch['rate_close'].pct_change()
-        df = pd.merge(df, df_usd_vnd_ch[['date', 'usdvnd_change']], on='date', how='left')
-    else:
-        df['usdvnd_change'] = 0.0
-    df['usdvnd_change'] = df['usdvnd_change'].fillna(0.0)
 
-    # Đồng bộ múi giờ — US macro shift(1) cho VN tickers (NYSE đóng cửa
-    # sau HOSE), không shift cho US tickers (cùng phiên giao dịch).
-    if is_vn:
-        df['vix_lag1']            = df['vix'].shift(1)
-        df['bond_yield_lag1']     = df['bond_yield_10y'].shift(1)
-        df['usdvnd_change']       = df['usdvnd_change'].shift(1)
-        df['vnindex_return_lag1'] = df['market_return'].shift(1)
-        df['sp500_above_ma200']   = df['sp500_above_ma200'].shift(1)
-        df['nasdaq_12m_return']   = df['nasdaq_12m_return'].shift(1)
-    else:
-        df['vix_lag1']            = df['vix']
-        df['bond_yield_lag1']     = df['bond_yield_10y']
-        df['usdvnd_change']       = df['dollar_index_change']
-        df['vnindex_return_lag1'] = df['market_return']
-        # sp500_above_ma200 / nasdaq_12m_return: KHÔNG shift cho US —
-        # SP500 close cùng ngày T hợp lệ cho US tickers (cùng timezone).
+    # Lùi toàn bộ dữ liệu Vĩ mô về 1 phiên (shift 1) cho tất cả các mã
+    # để đảm bảo tính nhất quán (Lagged Features) và không trùng lặp cột.
+    df['vix_lag1']            = df['vix'].shift(1)
+    df['bond_yield_lag1']     = df['bond_yield_10y'].shift(1)
+    df['sp500_above_ma200']   = df['sp500_above_ma200'].shift(1)
+    df['nasdaq_12m_return']   = df['nasdaq_12m_return'].shift(1)
 
     df['vix_lag1']        = df['vix_lag1'].ffill().bfill().fillna(20.0)
     df['bond_yield_lag1'] = df['bond_yield_lag1'].ffill().bfill().fillna(4.0)
@@ -449,7 +314,7 @@ def fetch_and_prepare_data(
         else:
             df.loc[group.index, 'is_quarter_end'] = 1
 
-    df['days_before_tet'] = calculate_days_before_tet(df['date']) if is_vn else 30.0
+
 
     # === Kalman filter với guard — chỉ tính 1 lần ===
     # Tránh double-smooth nếu df đã có close_smoothed (ví dụ load từ cache)
@@ -462,21 +327,29 @@ def fetch_and_prepare_data(
     else:
         print("  [INFO] close_smoothed đã có trong df, bỏ qua Kalman (tránh double-smooth).")
 
-    # Sentiment
+    # Sentiment (Using CSV)
     try:
-        try:
-            from src.news_sentiment import get_news_sentiment_features
-        except ImportError:
-            from news_sentiment import get_news_sentiment_features
-        df_sent = get_news_sentiment_features(
-            ticker, df['date'].dt.strftime('%Y-%m-%d').tolist(), engine=sentiment_engine
-        )
-        df_sent['date'] = pd.to_datetime(df_sent['date'])
-        df = pd.merge(df, df_sent, on='date', how='left')
+        news_file = os.path.join(data_dir, f"news_{ticker}_historical_20yr.csv")
+        if os.path.exists(news_file):
+            print(f"  Đang nạp file tin tức: {news_file}")
+            df_news = pd.read_csv(news_file)
+            df_news['date'] = pd.to_datetime(df_news['date']).dt.normalize()
+            
+            # Tính sentiment_score trung bình và số lượng tin tức mỗi ngày
+            df_sent = df_news.groupby('date').agg(
+                sentiment_score=('sentiment_vader', 'mean'),
+                news_volume=('sentiment_vader', 'count')
+            ).reset_index()
+            
+            df = pd.merge(df, df_sent, on='date', how='left')
+        else:
+            print(f"  [WARNING] Không tìm thấy file tin tức {news_file}")
+            if 'sentiment_score' not in df.columns: df['sentiment_score'] = 0.0
+            if 'news_volume' not in df.columns: df['news_volume'] = 0.0
     except Exception as e:
-        print(f"  [WARNING] Không tích hợp được tin tức: {e}")
-        df['sentiment_score'] = 0.0
-        df['news_volume']     = 0.0
+        print(f"  [WARNING] Lỗi xử lý tin tức: {e}")
+        if 'sentiment_score' not in df.columns: df['sentiment_score'] = 0.0
+        if 'news_volume' not in df.columns: df['news_volume'] = 0.0
 
     df['sentiment_score'] = df['sentiment_score'].fillna(0.0)
     df['news_volume']     = df['news_volume'].fillna(0.0)
@@ -488,13 +361,12 @@ def fetch_and_prepare_data(
     except Exception as e:
         print(f"  [WARNING] Lỗi tính đặc trưng cổ tức: {e}")
         df['dividend_flag'] = 0.0
-        df['days_to_dividend'] = 60.0
-        df['days_after_dividend'] = 60.0
 
-    # Target
+    # Target (Step-by-step forward returns)
     for h in [1, 2, 3]:
-        df[f'target_return_{h}d'] = (df['close'].shift(-h) - df['close']) / df['close']
-        df[f'target_spread_{h}d'] = (df['high'].shift(-h) - df['low'].shift(-h)) / df['close']
+        prev_close = df['close'].shift(-(h-1)) if h > 1 else df['close']
+        df[f'target_return_{h}d'] = (df['close'].shift(-h) - prev_close) / prev_close
+        df[f'target_spread_{h}d'] = (df['high'].shift(-h) - df['low'].shift(-h)) / prev_close
 
     # === KHÔNG còn tạo DataTransformer() để transform_df() ở đây ===
     # Trước: transformer = DataTransformer(); df_feats = transformer.transform_df(df)
@@ -550,7 +422,7 @@ if __name__ == "__main__":
         sys.stdout.reconfigure(encoding='utf-8')
 
     print("=== CHẠY TẢI DỮ LIỆU GIAO DỊCH & VĨ MÔ ===")
-    tickers = ["VNM.VN", "GOOGL", "META"]
+    tickers = ["META"]
     for ticker in tickers:
         print(f"\n📥 Đang tải và tiền xử lý dữ liệu cho: {ticker}")
         try:

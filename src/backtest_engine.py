@@ -81,6 +81,7 @@ def run_simulation(
     resume_threshold=0.10, cooldown_period=20,
     vol_ratio=None,
     vol_filter_threshold=None,
+    hold_days=3,
 ):
     """
     Chạy mô phỏng giao dịch trên dữ liệu test.
@@ -159,7 +160,7 @@ def run_simulation(
 
     date_str  = lambda d: d.strftime('%Y-%m-%d') if hasattr(d, 'strftime') else str(d)
     buy_index = -1
-    HOLD_DAYS = 3
+    HOLD_DAYS = hold_days
     peak_price = 0.0
     max_equity_peak = initial_capital
     portfolio_stop_loss_triggered = False
@@ -173,7 +174,7 @@ def run_simulation(
     stop_loss_trigger_index = None
 
     # Regime filter column theo ticker
-    regime_col = 'vnm_etf_above_ma200' if "VNM" in ticker.upper() else 'sp500_above_ma200'
+    regime_col = 'sp500_above_ma200'
     has_regime = regime_col in df_test.columns
     if not has_regime:
         print(f"   [WARN] Không tìm thấy cột '{regime_col}' trong df_test — "
@@ -188,9 +189,9 @@ def run_simulation(
         r_3 = final_returns[i, 2]
         sigma = rolling_std[i]
 
-        is_momentum = (r_3 > r_2) and (r_2 > r_1) and (r_1 > threshold_buy)
-        is_mean_rev = (r_1 < -1.5 * sigma)
-        is_buy = is_momentum or is_mean_rev
+        # Sửa lỗi: Chỉ mua khi AI dự báo TĂNG.
+        # (Logic cũ bắt mua khi AI dự báo sập r_1 < -1.5*sigma và đòi hỏi r_3 > r_2 > r_1 quá khắt khe)
+        is_buy = (r_1 > threshold_buy)
 
         # Volatility Regime Filter
         if vol_filter_threshold is not None and vol_ratio_arr[i] > vol_filter_threshold:
@@ -239,8 +240,6 @@ def run_simulation(
 
         # Mở vị thế mới
         if position == 0 and is_buy and not just_sold:
-            if "VNM" in ticker.upper() and vol_zscore[i] < -0.5:
-                is_buy = False
             if is_buy:
                 shares    = cash * (1 - commission_pct) / buy_price
                 cash      = 0.0
@@ -268,7 +267,7 @@ def run_simulation(
             # từ lần trigger trước đó (nếu có), tránh dùng nhầm đáy cũ
             # (ví dụ đáy COVID 2020) làm tham chiếu cho lần dừng lỗ hiện tại.
             bh_trough = bh_equity[-1]
-            currency_label = "VNĐ" if "VNM" in ticker.upper() else "USD"
+            currency_label = "USD"
             print(f"      🚨 [PORTFOLIO STOP-LOSS] Drawdown {drawdown*100:.2f}% "
                   f"vào {date_str(dates[i])} (Đỉnh: {max_equity_peak:,.2f} {currency_label}, "
                   f"Hiện tại: {cur_equity:,.2f} {currency_label}) — ngưng giao dịch.")

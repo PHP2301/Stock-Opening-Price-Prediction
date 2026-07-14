@@ -23,6 +23,15 @@ def get_slice_indices(name, num_features):
             return 18, 34
         elif 'slice_flow_div' in name:
             return 34, 42
+    elif num_features == 40:
+        if 'slice_price' in name:
+            return 0, 12
+        elif 'slice_volume' in name:
+            return 12, 18
+        elif 'slice_tech' in name:
+            return 18, 35
+        elif 'slice_flow_div' in name:
+            return 35, 40
     else: # 44 or default
         if 'slice_price' in name:
             return 0, 12
@@ -109,34 +118,54 @@ from tensorflow.keras.layers import (
     Dense, Dropout, Input, LayerNormalization,
     Conv1D, Bidirectional, GRU, Multiply, Concatenate, GaussianNoise
 )
-from xgboost import XGBRegressor
-from sklearn.model_selection import TimeSeriesSplit, RandomizedSearchCV
+from xgboost import XGBClassifier, XGBRegressor
+from sklearn.multioutput import MultiOutputClassifier, MultiOutputRegressor
+import numpy as np
 
+class DualEngineXGBoost:
+    def __init__(self):
+        self.cls = XGBClassifier(
+            n_estimators=250, max_depth=3, learning_rate=0.02, 
+            random_state=42, eval_metric='logloss', n_jobs=1
+        )
+        self.reg = XGBRegressor(
+            n_estimators=300, max_depth=3, learning_rate=0.015, 
+            random_state=42, eval_metric='rmse', n_jobs=1
+        )
+        self.model_cls = None
+        self.model_reg = None
+        
+    def fit(self, X, y):
+        # Bước 1: Tạo nhãn phân loại (1 nếu lợi nhuận >= 0, ngược lại 0)
+        y_cls = (y >= 0).astype(int)
+        
+        if y.ndim > 1 and y.shape[1] > 1:
+            self.model_cls = MultiOutputClassifier(self.cls)
+            self.model_reg = MultiOutputRegressor(self.reg)
+        else:
+            y = y.ravel()
+            y_cls = y_cls.ravel()
+            self.model_cls = self.cls
+            self.model_reg = self.reg
+            
+        print("   [Dual-Engine] Đang huấn luyện Engine 1 (Phân loại xu hướng)...")
+        self.model_cls.fit(X, y_cls)
+        
+        print("   [Dual-Engine] Đang huấn luyện Engine 2 (Hồi quy biên độ)...")
+        self.model_reg.fit(X, y)
+        return self
+
+    def predict(self, X):
+        trend = self.model_cls.predict(X)
+        magnitude = self.model_reg.predict(X)
+        # Kích hoạt Hurdle Model: Chỉ giữ lại biên độ nếu Engine 1 dự báo tăng (1)
+        return magnitude * trend
 
 def build_xgboost_optimized(X_train_flat, y_train):
-    xgb_model = XGBRegressor(random_state=42, n_jobs=1)
-    param_distributions = {
-        'n_estimators': [100, 150, 200],
-        'max_depth': [3, 4, 5],
-        'learning_rate': [0.03, 0.05, 0.1],
-        'subsample': [0.8, 0.9, 1.0],
-        'colsample_bytree': [0.8, 0.9, 1.0],
-    }
-    tscv = TimeSeriesSplit(n_splits=5)
-    search = RandomizedSearchCV(
-        estimator=xgb_model,
-        param_distributions=param_distributions,
-        n_iter=6, cv=tscv,
-        scoring='neg_mean_absolute_error',
-        n_jobs=1, random_state=42,
-    )
-    print("⏳ Đang quét nhanh bộ tham số tối ưu cho XGBoost...")
-    if y_train.ndim > 1 and y_train.shape[1] > 1:
-        search.fit(X_train_flat, y_train)
-    else:
-        search.fit(X_train_flat, y_train.ravel())
-    print(f"🔥 Tham số tối ưu: {search.best_params_}")
-    return search.best_estimator_
+    print("⏳ Khởi tạo kiến trúc Dual-Engine (Classifier + Regressor)...")
+    model = DualEngineXGBoost()
+    model.fit(X_train_flat, y_train)
+    return model
 
 
 # ── PositionalEmbedding ──────────────────────────────────────────────
@@ -412,6 +441,11 @@ def build_transformer(input_shape, d_model=128, num_heads=8, key_dim=16, dropout
         x_volume = tf.keras.layers.Lambda(lambda x: x[:, :, 12:18], output_shape=lambda s: (s[0], s[1], 6), name="slice_volume")(x_noise)
         x_tech   = tf.keras.layers.Lambda(lambda x: x[:, :, 18:34], output_shape=lambda s: (s[0], s[1], 16), name="slice_tech")(x_noise)
         x_flow_div = tf.keras.layers.Lambda(lambda x: x[:, :, 34:42], output_shape=lambda s: (s[0], s[1], 8), name="slice_flow_div")(x_noise)
+    elif num_features == 40:
+        x_price  = tf.keras.layers.Lambda(lambda x: x[:, :,  0:12], output_shape=lambda s: (s[0], s[1], 12), name="slice_price")(x_noise)
+        x_volume = tf.keras.layers.Lambda(lambda x: x[:, :, 12:18], output_shape=lambda s: (s[0], s[1], 6), name="slice_volume")(x_noise)
+        x_tech   = tf.keras.layers.Lambda(lambda x: x[:, :, 18:35], output_shape=lambda s: (s[0], s[1], 17), name="slice_tech")(x_noise)
+        x_flow_div = tf.keras.layers.Lambda(lambda x: x[:, :, 35:40], output_shape=lambda s: (s[0], s[1], 5), name="slice_flow_div")(x_noise)
     else:
         x_price  = tf.keras.layers.Lambda(lambda x: x[:, :,  0:12], output_shape=lambda s: (s[0], s[1], 12), name="slice_price")(x_noise)
         x_volume = tf.keras.layers.Lambda(lambda x: x[:, :, 12:18], output_shape=lambda s: (s[0], s[1], 6), name="slice_volume")(x_noise)

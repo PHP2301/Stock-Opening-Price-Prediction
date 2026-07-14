@@ -42,14 +42,10 @@ tf.random.set_seed(SEED)
 # Constraint bắt buộc: num_heads * key_dim <= d_model
 # ════════════════════════════════════════════════════════════════════
 SEARCH_SPACE = {
-    'VNM.VN': {'d_model': [32, 64],   'num_heads': [2, 4]},
-    'GOOGL':  {'d_model': [64, 128],  'num_heads': [2, 4, 8]},
     'META':   {'d_model': [64, 128],  'num_heads': [2, 4]},
 }
 
 N_TRIALS = {
-    'VNM.VN': 40,
-    'GOOGL':  25,
     'META':   40,
 }
 
@@ -66,7 +62,7 @@ def objective(trial):
     tf.get_logger().setLevel('ERROR')
 
     ticker = _current_ticker
-    space  = SEARCH_SPACE.get(ticker, SEARCH_SPACE['GOOGL'])
+    space  = SEARCH_SPACE.get(ticker, SEARCH_SPACE['META'])
 
     d_model       = trial.suggest_categorical('d_model',      space['d_model'])
     num_heads     = trial.suggest_categorical('num_heads',    space['num_heads'])
@@ -130,7 +126,7 @@ def run_tuning_for_ticker(t_ticker: str):
 
     print(f"\n{'='*60}")
     print(f"🚀 [OPTUNA] {t_ticker}")
-    print(f"   Search space : {SEARCH_SPACE.get(t_ticker, SEARCH_SPACE['GOOGL'])}")
+    print(f"   Search space : {SEARCH_SPACE.get(t_ticker, SEARCH_SPACE['META'])}")
     print(f"   key_dim      : [8, 16, 32] (constraint: num_heads*key_dim <= d_model)")
     print(f"   N trials     : {N_TRIALS.get(t_ticker, 25)}")
     print(f"   Tuning epochs: {TUNING_EPOCHS} (patience={TUNING_PATIENCE})")
@@ -173,8 +169,8 @@ def run_tuning_for_ticker(t_ticker: str):
     # In các tổ hợp hợp lệ để tham khảo trước khi chạy
     valid_combos = [
         (d, h, k)
-        for d in SEARCH_SPACE.get(t_ticker, SEARCH_SPACE['GOOGL'])['d_model']
-        for h in SEARCH_SPACE.get(t_ticker, SEARCH_SPACE['GOOGL'])['num_heads']
+        for d in SEARCH_SPACE.get(t_ticker, SEARCH_SPACE['META'])['d_model']
+        for h in SEARCH_SPACE.get(t_ticker, SEARCH_SPACE['META'])['num_heads']
         for k in [8, 16, 32]
         if d % h == 0 and h * k <= d
     ]
@@ -242,7 +238,7 @@ def run_tuning_for_ticker(t_ticker: str):
 
 
 def main():
-    TICKERS = ["VNM.VN", "GOOGL", "META"]
+    TICKERS = ["META"]
 
     if len(sys.argv) > 1:
         arg = sys.argv[1].upper()

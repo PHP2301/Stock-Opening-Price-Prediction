@@ -22,22 +22,22 @@ if hasattr(sys.stdout, 'reconfigure'):
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(ROOT_DIR)
 
-from src.data_loader import fetch_and_prepare_data, format_vn, get_realtime_usd_vnd_rate
+from src.data_loader import fetch_and_prepare_data
 from src.features import DataTransformer
 from src.ai_models import PositionalEmbedding, TimeDecayAttention, MultiTaskModel, UncertaintyWeightsLayer, CustomLambda
 
-USD_TO_VND = get_realtime_usd_vnd_rate()
+
 LOOKBACK_WINDOW = 45
 
 def format_price(value, ticker):
     if "VNM" in ticker.upper():
-        return f"{format_vn(value)} VNĐ"
+        return f"{value:,.0f} VND"
     else:
         return f"${value:,.2f} USD"
 
 def run_prediction_for_ticker(ticker):
     print(f"\n🔮 BẮT ĐẦU CHẠY DỰ BÁO GIÁ MỞ CỬA CHO MÃ: {ticker}")
-    print(f"💵 Tỷ giá USD/VND hiện tại: {format_vn(USD_TO_VND)} VNĐ\n")
+    
     
     models_dir = os.path.join(ROOT_DIR, "models")
     trans_path = os.path.join(models_dir, f"transformer_model_{ticker}.keras")
@@ -185,8 +185,6 @@ def run_prediction_for_ticker(ticker):
         
         vix_lag1 = float(df['vix_lag1'].iloc[-1]) if 'vix_lag1' in df.columns else 20.0
         bond_yield_lag1 = float(df['bond_yield_lag1'].iloc[-1]) if 'bond_yield_lag1' in df.columns else 4.0
-        usdvnd_change = float(df['usdvnd_change'].iloc[-1]) if 'usdvnd_change' in df.columns else 0.0
-        vnindex_return_lag1 = float(df['vnindex_return_lag1'].iloc[-1]) if 'vnindex_return_lag1' in df.columns else 0.0
         news_sentiment_score = float(df['sentiment_score'].iloc[-1]) if 'sentiment_score' in df.columns else 0.0
 
         # Import và thực thi các Agent
@@ -204,7 +202,7 @@ def run_prediction_for_ticker(ticker):
 
         tech_rep = tech_agent.analyze(ticker, trans_return_transformer, trans_return_xgb, rsi_14, macd_ratio, bb_position)
         sent_rep = sent_agent.analyze(ticker, news_sentiment_score)
-        macro_rep = macro_agent.analyze(ticker, vix_lag1, bond_yield_lag1, usdvnd_change, vnindex_return_lag1)
+        macro_rep = macro_agent.analyze(ticker, vix_lag1, bond_yield_lag1)
         risk_rep = risk_agent.analyze(ticker, last_close, last_atr, mfi_14)
 
         forecast_val = float(trans_return_future[0]) if hasattr(trans_return_future, "__len__") else float(trans_return_future)
@@ -222,8 +220,7 @@ def run_prediction_for_ticker(ticker):
         print(f"📊 KẾT QUẢ DỰ BÁO 3 NGÀY CHO MÃ: {ticker}")
         print(f"  💵 Giá đóng cửa gần nhất ({last_date}): {format_price(last_close, ticker)}")
         print(f"  ⚠️  Mức độ rủi ro biến động: {risk_level} ({risk_ratio:.2f}%)")
-        if "VNM" not in ticker.upper():
-            print(f"  💵 Tỷ giá quy chiếu: {format_vn(USD_TO_VND)} VNĐ/USD")
+        
         print("  🌳 Dự báo Hybrid XGBoost (Chuỗi 3 ngày):")
         for h in range(3):
             trend = f"📈 TĂNG ({trans_return_future[h]*100:+.2f}%)" if trans_vals[h] >= last_close else f"📉 GIẢM ({trans_return_future[h]*100:+.2f}%)"
@@ -305,8 +302,7 @@ def run_prediction_for_ticker(ticker):
             f.write(f"Mã chứng khoán: {ticker}\n")
             f.write(f"Giá đóng cửa gần nhất ({last_date}): {format_price(last_close, ticker)}\n")
             f.write(f"Rủi ro biến động: {risk_level} (Tỷ lệ: {risk_ratio:.2f}%)\n")
-            if "VNM" not in ticker.upper():
-                f.write(f"Tỷ giá USD/VND quy đổi: 1 USD = {format_vn(USD_TO_VND)} VNĐ\n")
+            
             f.write("Dự báo Hybrid XGBoost (3 ngày):\n")
             for h in range(3):
                 trend = f"📈 TĂNG ({trans_return_future[h]*100:+.2f}%)" if trans_vals[h] >= last_close else f"📉 GIẢM ({trans_return_future[h]*100:+.2f}%)"
@@ -474,11 +470,11 @@ def run_prediction_for_ticker(ticker):
         traceback.print_exc()
 
 def main():
-    target = "VNM.VN"
+    target = "META"
     if len(sys.argv) > 1:
         target = sys.argv[1].upper()
     
-    TICKERS = ["VNM.VN", "GOOGL", "META"]
+    TICKERS = ["META"]
     if target == "ALL":
         for t in TICKERS:
             try:

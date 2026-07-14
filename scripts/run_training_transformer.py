@@ -44,7 +44,7 @@ tf.random.set_seed(SEED)
 os.environ['PYTHONHASHSEED'] = str(SEED)
 os.environ.setdefault('TF_XLA_FLAGS', '--tf_xla_auto_jit=2')
 
-from src.data_loader import fetch_and_prepare_data, format_vn, get_realtime_usd_vnd_rate
+from src.data_loader import fetch_and_prepare_data
 from src.features import DataTransformer, kalman_filter
 from src.ai_models import (
     build_xgboost_optimized, build_transformer,
@@ -55,8 +55,6 @@ from src.backtest_engine import (
     run_simulation, run_walk_forward_evaluation
 )
 
-USD_TO_VND = get_realtime_usd_vnd_rate()
-print(f"💵 Tỷ giá USD/VND: {format_vn(USD_TO_VND)} VNĐ\n")
 
 LOOKBACK_WINDOW = 45
 
@@ -76,18 +74,6 @@ def cosine_decay(epoch):
     return max(initial_lrate * 0.5 * (1.0 + math.cos(cos_outer)), 1e-5)
 
 
-def evaluate_predictions(y_true, y_pred, model_name, ticker, rate=None):
-    rmse = np.sqrt(mean_squared_error(y_true, y_pred))
-    mae  = mean_absolute_error(y_true, y_pred)
-    mape = np.mean(np.abs((y_true - y_pred) / (y_true + 1e-9))) * 100
-    print(f"=== {model_name.upper()} ===")
-    if "VNM" in ticker.upper():
-        print(f"  RMSE: {format_vn(rmse)} VNĐ  |  MAE: {format_vn(mae)} VNĐ  |  MAPE: {mape:.2f}%\n")
-    else:
-        conv_rate = rate if rate is not None else USD_TO_VND
-        print(f"  RMSE: {format_vn(rmse)} VNĐ (${rmse/conv_rate:.2f})  |  MAE: {format_vn(mae)} VNĐ (${mae/conv_rate:.2f})  |  MAPE: {mape:.2f}%\n")
-    return rmse, mae, mape
-
 
 # Các hàm backtest dùng chung đã được chuyển sang src.backtest_engine
 
@@ -95,8 +81,8 @@ def evaluate_predictions(y_true, y_pred, model_name, ticker, rate=None):
 def main():
     print("🚀 Khởi động Training Pipeline (Transformer) - Rolling Walk-Forward...")
 
-    TICKERS    = ["VNM.VN", "GOOGL", "META"]
-    START_TRAIN = "2010-01-01"
+    TICKERS    = ["META"]
+    START_TRAIN = "2012-01-01"
     END_PREDICT = "2026-05-20"
 
     if len(sys.argv) > 1:
@@ -153,8 +139,8 @@ def main():
                 break
 
         # ── BƯỚC 1: KIỂM THỬ CUỘN CHIẾU (ROLLING WALK-FORWARD BACKTEST) ──
-        test_years = [2023, 2024, 2025, 2026]
-        test_start_date = pd.to_datetime("2023-01-01")
+        test_years = list(range(2016, datetime.datetime.now().year + 1))
+        test_start_date = pd.to_datetime(f"{test_years[0]}-01-01")
         df_test_all = df[df['date'] >= test_start_date].copy().reset_index(drop=True)
         
         run_wf = not df_test_all.empty
@@ -169,13 +155,14 @@ def main():
                 year_start = pd.to_datetime(f"{year}-01-01")
                 year_end   = pd.to_datetime(f"{year}-12-31")
                 
-                train_df = df[df['date'] < year_start].copy()
+                train_start = pd.to_datetime(f"{year-4}-01-01")
+                train_df = df[(df['date'] >= train_start) & (df['date'] < year_start)].copy()
                 test_df  = df[(df['date'] >= year_start) & (df['date'] <= year_end)].copy()
                 
                 if test_df.empty:
                     continue
                     
-                print(f"\n▶️ [WINDOW {year}] — Huấn luyện: {START_TRAIN} → {year-1} ({len(train_df)} phiên) | Kiểm thử: {year} ({len(test_df)} phiên)...")
+                print(f"\n▶️ [WINDOW {year}] — Huấn luyện: {year-4} → {year-1} ({len(train_df)} phiên) | Kiểm thử: {year} ({len(test_df)} phiên)...")
                 
                 dt_wf = DataTransformer(time_steps=LOOKBACK_WINDOW)
                 X_train_raw = dt_wf.transform_df(train_df).values
@@ -288,10 +275,10 @@ def main():
                 
             trans_returns_all = np.concatenate(trans_pred_accum, axis=0)
             
-            cur_threshold_buy = 0.0050 if "VNM" in ticker.upper() else 0.0010
+            cur_threshold_buy = 0.0050 if "VNM" in ticker.upper() else 0.0050
             cur_threshold_sell = -cur_threshold_buy
             
-            print(f"\n📊 [SIMULATION] Chạy giả lập trên dữ liệu kiểm thử cuộn chiếu 2023 → 2026 ({len(df_test_all)} phiên)...")
+            print(f"\n📊 [SIMULATION] Chạy giả lập trên dữ liệu kiểm thử cuộn chiếu {test_years[0]} → {test_years[-1]} ({len(df_test_all)} phiên)...")
             dates, equity, bh_equity, trades = run_simulation(
                 df_test_all, df_test_extended_all,
                 trans_returns_all,
@@ -302,7 +289,7 @@ def main():
             metrics = compute_metrics(equity, bh_equity, dates)
             win_rate, total_trades, profit_factor = compute_trade_metrics(trades, commission_pct)
             
-            print(f"\n🏆 KẾT QUẢ WALK-FORWARD ROLLING BACKTEST (2023–2026):")
+            print(f"\n🏆 KẾT QUẢ WALK-FORWARD ROLLING BACKTEST ({test_years[0]}–{test_years[-1]}):")
             print(f"   📈 Chiến lược : {metrics['strat_return']:+.2f}%")
             print(f"   📦 Buy&Hold  : {metrics['bh_return']:+.2f}%")
             print(f"   📊 Sharpe    : {metrics['sharpe']:.2f}")

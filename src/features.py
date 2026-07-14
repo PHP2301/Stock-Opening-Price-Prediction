@@ -59,17 +59,16 @@ class DataTransformer:
                 # Nhánh 3 — Kỹ thuật, Vĩ mô & Lịch (18)
                 'rsi_14', 'macd_ratio', 'bb_position', 'adx_14', 'stoch_k',
                 'efficiency_ratio', 'vix_lag1', 'bond_yield_lag1',
-                'usdvnd_change', 'vnindex_return_lag1',
-                'sp500_above_ma200', 'nasdaq_12m_return',
+                'dollar_index_lag1', 'sp500_above_ma200', 'nasdaq_12m_return',
                 'day_of_week_sin', 'day_of_week_cos',
                 'month_sin', 'month_cos',
-                'is_quarter_end', 'days_before_tet',
+                'is_quarter_end',
                 # Nhánh 4 — Dòng tiền & Cổ tức (8 mới)
-                'mfi_14', 'dividend_flag', 'days_to_dividend', 'days_after_dividend',
+                'mfi_14', 'dividend_flag', 
                 'foreign_net_buy_proxy', 'foreign_net_buy_5d', 'foreign_net_buy_20d',
                 'self_net_buy_proxy'
             ]
-            if num_features == 42:
+            if num_features == 38:
                 self.feature_cols = [c for c in cols_44 if c not in ['sp500_above_ma200', 'nasdaq_12m_return']]
             else:
                 self.feature_cols = cols_44
@@ -172,21 +171,21 @@ class DataTransformer:
 
         # ── Macro columns từ data_loader (passthrough) ────────────────
         # FIX: các cột macro đã tính trong data_loader, chỉ cần copy qua
-        for col in ['vix_lag1', 'bond_yield_lag1', 'usdvnd_change',
-                    'vnindex_return_lag1', 'sp500_above_ma200', 'nasdaq_12m_return',
+        for col in ['vix_lag1', 'bond_yield_lag1',
+                    'sp500_above_ma200', 'nasdaq_12m_return',
                     'day_of_week_sin', 'day_of_week_cos',
-                    'month_sin', 'month_cos', 'is_quarter_end', 'days_before_tet']:
+                    'month_sin', 'month_cos', 'is_quarter_end']:
             if col in df.columns:
                 df_copy[col] = df[col].reset_index(drop=True).values
             else:
                 df_copy[col] = 0.0
 
         # Passthrough các cột cổ tức từ data_loader (mặc định nếu thiếu)
-        for col in ['dividend_flag', 'days_to_dividend', 'days_after_dividend']:
+        for col in ['dividend_flag']:
             if col in df.columns:
                 df_copy[col] = df[col].reset_index(drop=True).values
             else:
-                df_copy[col] = 60.0 if col != 'dividend_flag' else 0.0
+                df_copy[col] = 0.0
 
         # ── Nhánh 4: Dòng tiền & Cổ tức (Tính toán bổ sung) ───────────
         # MFI 14 ngày
@@ -216,10 +215,7 @@ class DataTransformer:
         for col in self.feature_cols:
             df_out[col] = df_out[col].ffill().bfill().fillna(0.0)
 
-        if 'days_to_dividend' in df_out.columns:
-            df_out['days_to_dividend']    = df_out['days_to_dividend'].fillna(60.0)
-        if 'days_after_dividend' in df_out.columns:
-            df_out['days_after_dividend'] = df_out['days_after_dividend'].fillna(60.0)
+
 
         return df_out[self.feature_cols]
 
@@ -342,7 +338,7 @@ if __name__ == "__main__":
         sys.stdout.reconfigure(encoding='utf-8')
     print("=== CHẠY BIẾN ĐỔI ĐẶC TRƯNG ===")
     from src.data_loader import fetch_and_prepare_data
-    for ticker in ["VNM.VN", "GOOGL", "META"]:
+    for ticker in ["META"]:
         print(f"\n🔬 {ticker}")
         try:
             df = fetch_and_prepare_data(ticker, "2015-01-01", "2026-05-20")
